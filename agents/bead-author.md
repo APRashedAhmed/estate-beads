@@ -1,6 +1,6 @@
 ---
 name: bead-author
-description: Authors exactly one estate Bead from a caller's brief, so authoring never spends main-agent context. Runs the T1–T5 gate, the create call, the workunit.yaml backlink, and the per-Bead migration-log line. Returns one line — the Bead id, or a refusal token. Never judges or works a Bead.
+description: The exception-path Bead author — for a finder that cannot cite the recognition source from its own context and needs the transcript check, or a headless run without script permission (DCQ-4: inline `create-bead.sh` is the default; this agent is the stated exception). Authors exactly one estate Bead from a caller's brief. Runs the T1–T5 gate, the create call, the workunit.yaml backlink, and the per-Bead migration-log line. Returns one line — the Bead id, or a refusal token. Never judges or works a Bead.
 model: sonnet
 tools: Bash, Read, Edit
 ---

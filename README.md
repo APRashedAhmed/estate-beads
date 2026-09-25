@@ -16,14 +16,12 @@ Beads work-tracking for the estate: create, claim, report, accept, release and g
   `scripts/eb-session-end.sh`. See the support matrix below.
 
 ## Dependencies
-Stdlib-only. <!-- list any non-stdlib runtime dependency here; prefer stdlib-only -->
+PyYAML (`python3 -c 'import yaml'`), used by `scripts/lib/frontmatter.py` (review-report
+frontmatter) and `scripts/lib/batch.py` (batch-authoring artifact parsing). Everything else is
+stdlib-only.
 
 ## Telemetry
 This plugin emits no telemetry.
-<!-- If it emits events via the agentic-telemetry facade (emit_event), list each event + when it
-     fires in a table here, vendor the catalog as registry.d/<prefix>.yml, and deposit it from
-     install.sh. Re-scaffold with --with-telemetry to generate that structure. See
-     guidelines/telemetry-contract.md and the usage-aware-execution exemplar. -->
 
 ## Decisions
 Architecture decisions live in `decisions/` (managed by adr-tools — `adr new` to add one,
@@ -62,11 +60,11 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
 | `session_opened` (`SessionStart` → `bd prime` + `BEADS_ACTOR` export + advisory crash sweep) | Observe (records/exports; rejects nothing) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | advisory | fail-open | `tests/eb-session.test.sh` |
 | `before_mutation` (`PreToolUse(Bash)` → `scripts/eb-guard.py`, the `bd` verb guard) | Prevent (governed seam, fails closed on a recognized `bd` invocation the tokenizer cannot parse) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | governed | deny | `tests/eb-guard.test.sh`, `tests/fixtures/guard/*.json` |
 | `SessionEnd` (release this session's claims) — **no seam in the seven-seam vocabulary**; not amended (design §12.8) | Observe (acts deterministically on this session's own claims; rejects nothing — the least-wrong of the six §3 values for a non-rejecting seam) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | advisory | fail-open | `tests/eb-session.test.sh` |
-| after_mutation | TODO | TODO | TODO | TODO | TODO — not built this unit |
-| subagent_admitted | TODO | TODO | TODO | TODO | TODO — not built this unit; see "Known gaps" (P5 FAIL) |
-| subagent_closed | TODO | TODO | TODO | TODO | TODO — not built this unit |
-| turn_closed | TODO | TODO | TODO | TODO | TODO — not built this unit |
-| config_changed | TODO | Not available — Claude-only event (§4) | TODO | TODO | TODO |
+| after_mutation | not used | not used | — | — | — |
+| subagent_admitted | not used | not used | — | — | see "Known gaps" (P5 FAIL) |
+| subagent_closed | not used | not used | — | — | — |
+| turn_closed | not used | not used | — | — | — |
+| config_changed | not used | Not available — Claude-only event (§4) | — | — | — |
 
 ## Known gaps
 

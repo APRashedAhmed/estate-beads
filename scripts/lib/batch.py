@@ -13,7 +13,8 @@ topological creation order, and prints ONE JSON object on stdout:
     "recognized_by": "<str, default = the artifact path>",
     "units": [
       {
-        "key": "<str>", "title": "<str>", "description": "<str>",
+        "key": "<str>"|null,          # null when the unit gave no key (title-fallback, §11.7)
+        "title": "<str>", "description": "<str>",
         "acceptance": "<str>", "accept": "evidence|independent|operator",
         "type": "<str, default task>",
         "labels": ["<str>", ...],           # batch ∪ unit, deduped, sorted
@@ -30,7 +31,8 @@ topological creation order, and prints ONE JSON object on stdout:
 
 Exits 1 with a one-line message on stderr and prints nothing on:
   - no fenced yaml block with both `project` and `units`
-  - missing required batch `project`, or a unit missing `key`/`title`/`acceptance`/`accept`
+  - missing required batch `project`, or a unit missing `title`/`acceptance`/`accept`
+    (`key` is optional — a keyless unit falls back to title matching, §11.7)
   - a unit `accept` not in {evidence, independent, operator}
   - a duplicate `key` across units
   - a `parent`/`deps` sibling-key cycle (including a unit citing its own key)
@@ -128,30 +130,41 @@ def main() -> int:
         die("batch 'units' must be a non-empty list")
         return 1
 
+    # m11 (review pa-s2s.8-review-1): §11.7 keeps title matching as the fallback "for artifacts
+    # without keys" — a unit may omit `key`. It gets an INTERNAL-ONLY synthetic key (never
+    # exposed in the output `key` field, never eligible as a sibling parent/dep target: only a
+    # unit with a real `key` can be referenced by others) so the topological sort still has a
+    # stable slot for it. create-beads-batch.sh sees `"key": null` for it and passes no --key to
+    # create-bead.sh, which falls back to its own exact-title idempotency match.
     keys = []
     by_key = {}
+    real_keyset = set()
+    has_real_key = {}
     for i, u in enumerate(raw_units):
         if not isinstance(u, dict):
             die(f"unit #{i} is not a mapping")
             return 1
         key = u.get("key")
-        if not key:
-            die(f"unit #{i} is missing required 'key'")
-            return 1
-        if key in by_key:
-            die(f"duplicate unit key '{key}'")
-            return 1
+        label = key or f"(unit #{i}, title '{u.get('title', '')}')"
+        if key:
+            if key in by_key:
+                die(f"duplicate unit key '{key}'")
+                return 1
+            real_keyset.add(key)
+        else:
+            key = f"__unkeyed_{i}"
         for field in ("title", "acceptance", "accept"):
             if not u.get(field):
-                die(f"unit '{key}' is missing required '{field}'")
+                die(f"unit {label} is missing required '{field}'")
                 return 1
         if u["accept"] not in ACCEPT_VALUES:
-            die(f"unit '{key}' has accept '{u['accept']}' not in evidence|independent|operator")
+            die(f"unit {label} has accept '{u['accept']}' not in evidence|independent|operator")
             return 1
         keys.append(key)
         by_key[key] = u
+        has_real_key[key] = key in real_keyset
 
-    keyset = set(keys)
+    keyset = real_keyset
 
     # Build each unit's effective, resolved shape (labels union, class/budget
     # override, parent/deps kind-tagged). No topological ordering yet.
@@ -195,7 +208,7 @@ def main() -> int:
             deps.append(dep)
 
         resolved[key] = {
-            "key": key,
+            "key": key if has_real_key[key] else None,
             "title": u["title"],
             "description": u.get("description") or "",
             "acceptance": u["acceptance"],

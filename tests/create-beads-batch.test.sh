@@ -104,4 +104,34 @@ assert_contains "drifted key still gets a stdout key/id line (no update)" "$drif
 d_title_after="$(bd show --json "$d_id" 2>/dev/null | jq -r '.[0].title')"
 assert_eq "a drifted title is never written in place" "Unit D" "$d_title_after"
 
+# --- m11 (review pa-s2s.8-review-1): a keyless unit falls back to title matching (§11.7) --------
+keyless_artifact="$scratch/plan-keyless.md"
+cat > "$keyless_artifact" <<'EOF'
+```yaml
+project: sample-proj
+units:
+  - title: "Keyless Unit"
+    description: "No key given."
+    acceptance: "Keyless work lands."
+    accept: evidence
+```
+EOF
+keyless_out1="$(scripts/create-beads-batch.sh --artifact "$keyless_artifact")"; keyless_rc1=$?
+assert_rc "keyless unit exits 0" 0 "$keyless_rc1"
+# the stdout line is "<empty-key> <id>" (a leading space, since the key is ""); awk's default
+# field splitting collapses that leading whitespace, so grab the trailing field instead.
+keyless_id1="${keyless_out1##* }"
+[[ -n "$keyless_id1" ]] && eb_ok "keyless unit resolves to an id" \
+  || eb_bad "keyless unit resolves to an id" "$keyless_out1"
+keyless_meta="$(bd show --json "$keyless_id1" 2>/dev/null | jq -c '.[0].metadata.key // "absent"')"
+assert_eq "a keyless unit's Bead carries no metadata.key" '"absent"' "$keyless_meta"
+
+keyless_out2="$(scripts/create-beads-batch.sh --artifact "$keyless_artifact")"; keyless_rc2=$?
+assert_rc "keyless unit rerun exits 0" 0 "$keyless_rc2"
+keyless_id2="${keyless_out2##* }"
+assert_eq "keyless unit rerun resolves to the SAME id (title-fallback idempotency)" \
+  "$keyless_id1" "$keyless_id2"
+count_after_keyless="$(bd list --json --limit 0 | jq 'length')"
+assert_eq "keyless unit rerun creates no duplicate Bead" "6" "$count_after_keyless"
+
 eb_report
