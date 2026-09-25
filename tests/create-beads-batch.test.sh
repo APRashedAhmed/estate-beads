@@ -99,6 +99,7 @@ drift_err="$(scripts/create-beads-batch.sh --artifact "$drift_artifact" 2>&1 1>/
 drift_out="$(scripts/create-beads-batch.sh --artifact "$drift_artifact" 2>/dev/null)"
 assert_contains "drifted key prints EXISTS: <id> on stderr" "$drift_err" "EXISTS: $d_id"
 assert_contains "drift hint names the field that changed" "$drift_err" "Unit D"
+assert_contains "drift hint names the next-step remedy" "$drift_err" "Remedy: bd update $d_id"
 assert_contains "drifted key still gets a stdout key/id line (no update)" "$drift_out" "unit-d $d_id"
 d_title_after="$(bd show --json "$d_id" 2>/dev/null | jq -r '.[0].title')"
 assert_eq "a drifted title is never written in place" "Unit D" "$d_title_after"

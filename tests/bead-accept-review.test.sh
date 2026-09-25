@@ -67,6 +67,28 @@ assert_eq "HALTED releases the claim (status open)" "open" "$(printf '%s' "$bead
 assert_eq "HALTED clears the assignee" "null" "$(printf '%s' "$bead" | jq -c '.assignee')"
 assert_contains "HALTED adds label halt:budget" "$(printf '%s' "$bead" | jq -c '.labels')" "halt:budget"
 
+# --- FAIL/HALT preserve COMPLETED and other pre-existing block lines (not just NEXT) --------------
+id="$(scripts/create-bead.sh --title "PreserveOnFail" --description d --acceptance a --project p --accept independent --recognized-by x)"
+bd update "$id" --metadata '{"workunit":"'"$scratch"'"}' >/dev/null
+scripts/bead-claim.sh --id "$id" --model sonnet >/dev/null
+scripts/bead-progress.sh --id "$id" --completed "step1 done" --in-progress "working" --next "keep going" >/dev/null
+scripts/bead-report-success.sh --id "$id" --evidence "initial report" >/dev/null
+rp1="$REPORTS/preserve-fail1.md"; eb_write_review "$rp1" "$id" FAIL opus fresh ""
+scripts/bead-accept.sh --review "$rp1" >/dev/null
+notes="$(bd show --json "$id" 2>/dev/null | jq -r '.[0].notes')"
+assert_contains "FAIL preserves the prior COMPLETED line" "$notes" "COMPLETED: step1 done"
+assert_contains "FAIL preserves the workunit line" "$notes" "workunit: $scratch"
+assert_contains "FAIL preserves the EVIDENCE line (not just COMPLETED/workunit)" "$notes" "EVIDENCE: initial report"
+
+scripts/bead-claim.sh --id "$id" --model sonnet >/dev/null
+scripts/bead-report-success.sh --id "$id" --evidence "second attempt" >/dev/null
+rp2="$REPORTS/preserve-fail2.md"; eb_write_review "$rp2" "$id" FAIL opus fresh ""
+out="$(scripts/bead-accept.sh --review "$rp2")"
+assert_eq "second preserve-FAIL at zero prints HALTED" "HALTED" "$out"
+notes="$(bd show --json "$id" 2>/dev/null | jq -r '.[0].notes')"
+assert_contains "HALT preserves the original COMPLETED line" "$notes" "COMPLETED: step1 done"
+assert_contains "HALT preserves the workunit line" "$notes" "workunit: $scratch"
+
 # --- legacy Bead (no budget metadata) FAIL materializes the default, then decrements --------------
 legacy="$(bd create "LegacyFail" --type task --description d --acceptance a \
   --labels "project:p,accept:independent,class:bounded-increment" --metadata '{"recognized-by":"x"}' --json 2>/dev/null | jq -r .id)"
