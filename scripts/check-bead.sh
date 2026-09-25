@@ -3,8 +3,12 @@
 # Silent on pass. On fail: the violated invariant plus the exact remedy.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SELF="check-bead"
 die() { printf '%s: %s\n' "$SELF" "$1" >&2; exit "${2:-1}"; }
+
+# shellcheck source=lib/eb-common.sh
+source "$SCRIPT_DIR/lib/eb-common.sh"
 
 id=""; expect_parent=""
 while [[ $# -gt 0 ]]; do
@@ -47,7 +51,24 @@ rb="$(jqv '.metadata["recognized-by"] // ""')"
   "metadata 'recognized-by' is absent or empty; it is required always (contract §6.1)" \
   "bd update $id --metadata '{\"recognized-by\":\"<verbatim citation>\"}'"
 
-wu="$(jqv '.metadata.workunit // ""')"
+n_class="$(jqv '[.labels[]? | select(startswith("class:"))] | length')"
+[[ "$n_class" == "1" ]] || report \
+  "expected exactly one 'class:' label, found $n_class (design §11.7)" \
+  "bd update $id --add-label 'class:bounded-increment' (or 'class:hardened')"
+
+budget_json="$(jqv '.metadata.budget // ""')"
+if [[ -z "$budget_json" || "$budget_json" == "null" ]]; then
+  report "metadata 'budget' is absent (design §11.7)" \
+    "bd update $id --metadata '{\"budget\":{\"cycles\":2}}'"
+else
+  n_bad="$(jqv '(.metadata.budget // {}) | to_entries | map(select((.value | type) != "number" or (.value | floor) != .value or .value < 0)) | length')"
+  [[ "$n_bad" == "0" ]] || report \
+    "metadata 'budget' has a non-integer or negative dimension" \
+    "bd update $id --metadata '{\"budget\":{\"cycles\":<non-negative integer>}}'"
+fi
+
+wu_raw="$(jqv '.metadata.workunit // ""')"
+wu="$(eb_expand_seat_root "$wu_raw")"
 if [[ -n "$wu" ]]; then
   manifest="${wu%/}/workunit.yaml"
   if [[ ! -d "${wu%/}" ]]; then
