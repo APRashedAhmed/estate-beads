@@ -4,8 +4,9 @@
   "author": {
     "name": "aprashedahmed"
   },
-  "version": "0.0.0+codex.c7e11f5",
+  "version": "0.0.0+codex.27e8599",
   "interface": {
     "displayName": "estate-beads"
-  }
+  },
+  "skills": "./skills/"
 }
