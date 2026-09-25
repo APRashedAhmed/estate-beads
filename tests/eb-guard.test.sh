@@ -92,5 +92,16 @@ for fx in "$FIXDIR"/*.json; do
   fi
 done
 
+# --- m4 (review pa-s2s.8-review-1): the guard's inner `bd show` timeout must be STRICTLY LESS
+#     than hooks.json's PreToolUse timeout, or a slow `bd show` fails OPEN (portability-
+#     contract.md §7's "a timed-out hook renders no decision") instead of closed -------------
+inner_timeout="$(python3 -c 'import sys; sys.path.insert(0, "'"$ROOT"'/scripts"); import importlib.util as u; spec = u.spec_from_file_location("eb_guard", "'"$GUARD"'"); m = u.module_from_spec(spec); spec.loader.exec_module(m); print(m.BD_SHOW_TIMEOUT)')"
+hook_timeout="$(python3 -c 'import json; print(json.load(open("'"$ROOT"'/hooks/hooks.json"))["hooks"]["PreToolUse"][0]["hooks"][0]["timeout"])')"
+if [ "$inner_timeout" -lt "$hook_timeout" ]; then
+  eb_ok "m4: guard's inner bd-show timeout (${inner_timeout}s) < PreToolUse hook timeout (${hook_timeout}s)"
+else
+  eb_bad "m4: guard's inner bd-show timeout < PreToolUse hook timeout" "inner=${inner_timeout}s hook=${hook_timeout}s"
+fi
+
 rm -rf "$scratch" "$GENERIC_CWD" "$NONGIT_CWD"
 eb_report

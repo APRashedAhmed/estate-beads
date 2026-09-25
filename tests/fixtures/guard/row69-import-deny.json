@@ -1,0 +1,12 @@
+{
+  "id": "row69-import-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd import backup.jsonl"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "no script wrapper"
+}

@@ -81,11 +81,35 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
   is only possible under an isolated settings source
   (`claude -p --setting-sources "" --settings <file>`), not in a normal session — this guard's
   scratch-form allow is inert against the live deny in the meantime.
-- **`bd` verb aliases (fix round 1, F1) — closed.** `done`→`close`, `new`/`q`→`create`,
+- **`bd` verb aliases (fix round 1, F1) — closed.** `done`→`close`, `new`/`q`/`create-form`→`create`,
   `note`→`update --append-notes`, and `-s`/`-s=`→`--status` are now canonicalized before judging
   (`scripts/eb-guard.py`'s `VERB_ALIASES` table) and denied with the same message as their
   canonical verb. `bd unclaim`/`bd reclaim`/`bd assign`/`bd set-state` remain genuinely allowed
   (adjacent claim/assign paths, not aliases of a denied verb) — not a gap.
+- **Close/create/delete by another route (fix round 2, M2) — closed.** `bd todo done <id>`
+  (→ close) and `bd todo add <title>` (→ create) are two-word verbs, judged on the token after
+  `todo`; bare `bd todo`/`bd todo list` stay allowed. `bd supersede`/`bd duplicate` (auto-close
+  their target — contract §5.4 has no sanctioned non-`accepted` close reason yet; operator ruling
+  pending), `bd batch`/`bd import` (reach close/create/update-status in one call), and
+  `bd prune`/`bd purge` (permanent delete) are denied outright, each with its own message; no
+  script wraps any of them. `bd forget` (the inverse of the already-denied `bd remember`) is
+  denied the same way.
+- **`bd <verb> --help`/`-h` (fix round 2, m2) — closed.** Allowed regardless of verb, but ONLY as
+  the first token after the verb (`bd close --help` allows; `bd close pa-x --reason -h` still
+  denies — `-h` there is a flag value, not a help request).
+- **Heredoc body with an apostrophe (fix round 2, m2) — closed.** A heredoc BODY line that fails
+  `shlex` (ordinary prose like `fix: don't ...`) no longer fails the WHOLE command closed; only
+  that body degrades to a per-line first-token check (`cat <<EOF\nbd close ...\nEOF` still
+  denies; a commit message merely containing the word "bd" does not).
+- **`env -S`/`--split-string` and command-position variable indirection (fix round 2, m3) —
+  closed.** `env -S 'bd close x'` now recurses into the split string the same way `bash -c`/`eval`
+  do. A variable, `$( )`, or backtick group sitting in COMMAND POSITION (`B=bd; $B close x`,
+  `` $(command -v bd) close x ``, `` `command -v bd` close x ``) denies whenever the word `bd`
+  appears anywhere in the original command text — deliberately broader than "this segment
+  invokes bd" (design §12.1's fail-closed default), since the guard cannot resolve what an
+  unresolved indirection names. Remaining unlisted wrappers/indirection (`find … -exec bd
+  close`, `setsid`, `doas`, `su -c`, `python3 -c os.system(...)`) are NOT covered — same class as
+  pa-s2s.4-review-2 N1, still a known gap.
 - **Wrapper/keyword/shell-string commands (fix round 1, F2/F3) — closed.** Shell reserved words
   (`if`/`then`/`else`/`elif`/`do`/`while`/`until`/`!`/`{`/`time`) and wrappers with their own
   options/values (`timeout N`, `nohup`, `sudo [opts]`, `exec`, `command`, `nice [-n N]`,
@@ -110,6 +134,10 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
 - **Scratch-allow reachability, checked live:** `git -C $SEAT_ROOT/scratch rev-parse --git-dir`
   and `git -C $SEAT_ROOT rev-parse --git-dir` both report "not a git repository" — the scratch
   form's cwd-outside-git-repo check is satisfiable at the estate's actual scratch path.
+- **Guard inner `bd show` timeout (fix round 2, m4) — closed.** Was equal to the PreToolUse hook
+  timeout (10s); now `BD_SHOW_TIMEOUT = 5` in `scripts/eb-guard.py`, strictly under it, so a slow
+  `bd show` times out INSIDE the guard's own budget and fails closed (`deny`) rather than running
+  out the hook's whole budget and rendering no decision at all (portability-contract.md §7).
 - **`update --status open` id detection is the first non-flag token**, so a flag value that
   itself looks positional (e.g. an id-shaped `--if-assignee` value preceding the real id) could
   be misread as the id. The failure direction is safe (an unresolvable/wrong id makes `bd show`

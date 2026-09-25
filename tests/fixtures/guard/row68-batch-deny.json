@@ -1,0 +1,12 @@
+{
+  "id": "row68-batch-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "printf 'close pa-x accepted\\n' | bd batch"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "no script wrapper"
+}

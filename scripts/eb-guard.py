@@ -46,6 +46,16 @@ DENY_MESSAGES = {
     "update-status-open-on-closed": "Raw `bd update --status open` on a closed Bead is denied. Use scripts/bead-report-success.sh, scripts/bead-accept.sh, or scripts/bead-reopen.sh.",
     "update-append-notes": "Raw `bd update --append-notes` is denied. Use scripts/bead-progress.sh (the rule-5 note carrier).",
     "parse-failure": "This command could not be parsed and appears to invoke `bd` — denied to fail closed (a governed seam denies on a recognized failure state).",
+    # M2 (review pa-s2s.8-review-1): verbs that close/create/delete Beads by a route the F1 alias
+    # table did not cover (`bd <verb> --help` checked live on bd 1.3.0).
+    "supersede": "bd supersede is denied — it automatically closes the superseded issue (contract §5.4). No sanctioned path yet; operator ruling pending.",
+    "duplicate": "bd duplicate is denied — it automatically closes the duplicate issue (contract §5.4). No sanctioned path yet; operator ruling pending.",
+    "batch": "bd batch is denied. Its stdin grammar reaches close/create/update(status=closed) in one call; there is no script wrapper. This operation is off-limits from a Bash call.",
+    "import": "bd import is denied. It upserts issues, including status, bypassing every guarded seam; there is no script wrapper. This operation is off-limits from a Bash call.",
+    "prune": "bd prune is denied. It permanently deletes closed Beads; there is no script wrapper. This operation is off-limits from a Bash call.",
+    "purge": "bd purge is denied. It permanently deletes closed ephemeral Beads; there is no script wrapper. This operation is off-limits from a Bash call.",
+    "forget": "bd forget is denied (the inverse of the denied `bd remember`). There is no script wrapper; this operation is off-limits from a Bash call.",
+    "variable-indirection": "A variable or command substitution sits in command position and this command also appears to invoke `bd` — denied to fail closed (design §12.1: an unresolvable command-position indirection is a recognized failure state, not an unrelated shell call).",
 }
 
 # --- F1: verb-alias -> canonical-verb table -------------------------------------------------
@@ -59,6 +69,8 @@ VERB_ALIASES = {
     "new": "create",  # `bd create --help`: "Aliases: create, new"
     "q": "create",  # `bd q` = quick create, a top-level verb functionally aliasing `create`
     "note": "update-append-notes",  # `bd note` = shorthand for `bd update <id> --append-notes`
+    # M2 (review pa-s2s.8-review-1, `bd <verb> --help` checked live on bd 1.3.0):
+    "create-form": "create",  # `bd create-form` = interactive `bd create`
 }
 
 BD_TOKEN_RE = re.compile(r"\bbd\b")
@@ -120,9 +132,14 @@ _BACKTICK_RE = re.compile(r"`([^`]*)`")
 
 
 def _extract_backticks(command: str):
-    """Return (command_with_backticks_blanked, [backtick_body, ...])."""
+    """Return (command_with_backticks_replaced_by_a_sentinel, [backtick_body, ...]).
+    m3 (review pa-s2s.8-review-1): blanking a backtick group to plain whitespace silently drops
+    the command name when it sat in command position (`` `command -v bd` close x `` would
+    otherwise tokenize to the bare, unrecognized segment `close x`). Substitute the same
+    `$(...)` sentinel `_split_segments` leaves for a command-position `$( )` group, so
+    `_find_bd_invocation`/the variable-indirection check downstream still see SOMETHING there."""
     bodies = [m.group(1) for m in _BACKTICK_RE.finditer(command)]
-    stripped = _BACKTICK_RE.sub(" ", command)
+    stripped = _BACKTICK_RE.sub(" $(...) ", command)
     return stripped, bodies
 
 
@@ -190,6 +207,12 @@ def _split_segments(tokens):
         if tok == "$" and i + 1 < n and tokens[i + 1] == "(":
             i += 2
             inner, i = _collect_paren_group(tokens, i)
+            if not current:
+                # m3 (review pa-s2s.8-review-1): a command-position `$( )` group (`$(command -v
+                # bd) close x`) would otherwise vanish entirely from `current`, leaving the bare
+                # unrecognized segment `close x`. Leave a sentinel so the variable-indirection
+                # check below still sees something occupying command position.
+                current.append("$(...)")
             segments.extend(_split_segments(inner))
             continue
         if tok == "(":
@@ -234,7 +257,22 @@ def tokenize_segments(command: str):
     segments = _split_segments(tokens)
     for body in heredoc_bodies:
         body_norm = _normalize_newlines(body)
-        segments.extend(_split_segments(_shlex_tokens(body_norm)))
+        try:
+            segments.extend(_split_segments(_shlex_tokens(body_norm)))
+        except ParseFailure:
+            # m2 (review pa-s2s.8-review-1): a heredoc BODY line containing an apostrophe (e.g.
+            # a commit message "fix: don't...") is common, legitimate prose that shlex cannot
+            # parse as shell tokens — it is not shell at all. Degrade to a per-LINE first-token
+            # check instead of failing the whole command closed: a line whose first token has
+            # basename `bd` still gets judged as its own segment (so `cat <<EOF\nbd close x\nEOF`
+            # still denies); an ordinary prose line never does.
+            for line in body.split("\n"):
+                stripped_line = line.strip()
+                if not stripped_line:
+                    continue
+                first_tok = stripped_line.split()[0]
+                if os.path.basename(first_tok) == "bd":
+                    segments.append(stripped_line.split())
     for body in backtick_bodies:
         segments.extend(_split_segments(_shlex_tokens(_normalize_newlines(body))))
     return segments
@@ -384,6 +422,30 @@ def _find_shell_exec_string(segment):
     return None
 
 
+# m3 (review pa-s2s.8-review-1): `env -S`/`--split-string` parses its value as a shell command
+# LINE and execs it — same execution class as `bash -c`/`eval` (F3), not a value `env` merely
+# passes through unread.
+def _find_env_split_string(segment):
+    """Return env's -S/--split-string value, or None. Only recognizes a BARE `env` in command
+    position (mirrors `_find_bd_invocation`'s own prefix handling — `sudo env -S '...'` is not
+    covered here since `_advance_past_prefixes` already consumes `sudo` before this runs)."""
+    n = len(segment)
+    if n == 0 or segment[0] != "env":
+        return None
+    i = 1
+    while i < n and segment[i].startswith("-"):
+        tok = segment[i]
+        if tok in ("-S", "--split-string") and i + 1 < n:
+            return segment[i + 1]
+        if tok.startswith("--split-string="):
+            return tok[len("--split-string=") :]
+        if tok in _ENV_VALUE_FLAGS and i + 1 < n:
+            i += 2
+            continue
+        i += 1
+    return None
+
+
 def _skip_global_flags(args):
     """F5: `bd --json close pa-x` / `bd -q close pa-x` — global flags may precede the verb.
     Returns the index of the first non-flag token (the verb), or len(args) if none. Skips the
@@ -421,7 +483,7 @@ def _recursive_bd_deny(text, cwd, depth):
     except ParseFailure:
         return "parse-failure" if BD_TOKEN_RE.search(text) else None
     for seg in segments:
-        verdict = judge_segment(seg, cwd, depth=depth + 1)
+        verdict = judge_segment(seg, cwd, depth=depth + 1, original_command=text)
         if verdict is not None:
             return verdict
     return None
@@ -486,6 +548,13 @@ def _cwd_outside_git_repo(cwd):
     return r.returncode != 0
 
 
+# m4 (review pa-s2s.8-review-1): must be STRICTLY LESS than hooks.json's PreToolUse timeout (10s)
+# — portability-contract.md §7's "a timed-out PreToolUse hook renders no decision" means a `bd
+# show` that runs out the FULL hook budget fails OPEN on `update --status open`, not closed. A
+# margin, not equality, is the invariant tests/eb-guard.test.sh asserts against hooks.json.
+BD_SHOW_TIMEOUT = 5
+
+
 def _bd_show_status(bead_id, cwd):
     """Return the Bead's status string, or None if `bd show` failed (fail closed by the
     caller). Never raises."""
@@ -496,7 +565,7 @@ def _bd_show_status(bead_id, cwd):
             ["bd", "show", "--json", bead_id],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=BD_SHOW_TIMEOUT,
             cwd=cwd if cwd and os.path.isdir(cwd) else None,
         )
     except Exception:
@@ -515,7 +584,7 @@ def _bd_show_status(bead_id, cwd):
 
 
 # --- per-segment verdict -----------------------------------------------------------------------
-def judge_segment(segment, cwd, depth=0):
+def judge_segment(segment, cwd, depth=0, original_command=""):
     """Return None (allow) or a deny-reason-key string (see DENY_MESSAGES)."""
     found = _find_bd_invocation(segment)
     if found is not None:
@@ -531,8 +600,16 @@ def judge_segment(segment, cwd, depth=0):
         if verb is None:
             return None  # bare `bd` (optionally with only global flags): nothing to deny against
 
-        # F1: canonicalize aliases (`done`->close, `new`/`q`->create, `note`->update-append-notes)
-        # before judging, so an alias is denied with the SAME message as its canonical verb.
+        # m2 (review pa-s2s.8-review-1): `bd <verb> --help`/`-h` is documentation, never a
+        # mutation — allow it regardless of verb, but ONLY when it is the FIRST token after the
+        # verb (never scan the whole arg list: `bd close pa-x --reason -h` must still deny —
+        # `-h`/`--help` there is a flag VALUE, not a request for help text).
+        if args and args[0] in ("--help", "-h"):
+            return None
+
+        # F1: canonicalize aliases (`done`->close, `new`/`q`/`create-form`->create,
+        # `note`->update-append-notes) before judging, so an alias is denied with the SAME
+        # message as its canonical verb.
         canonical = VERB_ALIASES.get(verb, verb)
 
         if canonical == "init":
@@ -540,11 +617,27 @@ def judge_segment(segment, cwd, depth=0):
                 return None
             return "init"
 
-        if canonical in ("delete", "remember", "edit", "sql"):
+        if canonical in ("delete", "remember", "edit", "sql", "forget"):
             return canonical
 
         if canonical == "reopen":  # F6
             return "reopen"
+
+        # M2: `bd supersede`/`bd duplicate` auto-close their target; `bd batch`/`bd import`
+        # reach close/create/update(status) in one call; `bd prune`/`bd purge` permanently
+        # delete. None has a script wrapper today.
+        if canonical in ("supersede", "duplicate", "batch", "import", "prune", "purge"):
+            return canonical
+
+        # M2: `bd todo` is a two-word verb family — `bd todo done <id>` -> close, `bd todo add
+        # <title>` -> create; bare `bd todo` / `bd todo list` are read-only and allowed.
+        if canonical == "todo":
+            sub = args[0] if args else None
+            if sub == "done":
+                return "close"
+            if sub == "add":
+                return "create"
+            return None
 
         if canonical == "create":
             return "create"
@@ -583,6 +676,24 @@ def judge_segment(segment, cwd, depth=0):
     exec_str = _find_shell_exec_string(segment)
     if exec_str is not None:
         return _recursive_bd_deny(exec_str, cwd, depth)
+
+    # m3 (review pa-s2s.8-review-1): `env -S '...'`/`--split-string='...'` execs its value as a
+    # shell command line, same class as the `bash -c`/`eval` check above.
+    env_split = _find_env_split_string(segment)
+    if env_split is not None:
+        return _recursive_bd_deny(env_split, cwd, depth)
+
+    # m3: a variable/command-substitution/backtick sentinel sits in COMMAND POSITION (`B=bd; $B
+    # close x`, `$(command -v bd) close x`, `` `command -v bd` close x ``) — the guard cannot
+    # resolve what it names. Fail closed per design §12.1 when the word `bd` appears anywhere in
+    # the original command text (the value-naming assignment typically lives in an earlier
+    # segment of the same compound command, out of reach of this segment alone). This is
+    # deliberately broader than "this segment invokes bd" — a documented, conservative deviation
+    # from "never blocks unrelated shell calls" for the narrow command-position-indirection case.
+    i = _advance_past_prefixes(segment)
+    if i < len(segment) and segment[i].startswith("$") and BD_TOKEN_RE.search(original_command):
+        return "variable-indirection"
+
     return None
 
 
@@ -591,7 +702,7 @@ def judge_command(command, cwd):
     cannot produce segments at all."""
     segments = tokenize_segments(command)
     for segment in segments:
-        verdict = judge_segment(segment, cwd)
+        verdict = judge_segment(segment, cwd, original_command=command)
         if verdict is not None:
             return verdict
     return None
