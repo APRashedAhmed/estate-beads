@@ -1,0 +1,11 @@
+{
+  "name": "estate-beads",
+  "description": "Beads work-tracking for the estate: create, claim, report, accept, release and guard bd",
+  "author": {
+    "name": "aprashedahmed"
+  },
+  "version": "0.0.0+codex.7a03129",
+  "interface": {
+    "displayName": "estate-beads"
+  }
+}
