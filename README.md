@@ -39,18 +39,52 @@ Architecture decisions live in `decisions/` (managed by adr-tools — `adr new` 
 ## Provider support
 Tier: T2 (see guidelines/portability-contract.md)
 
+**T2 scope is Claude-only for now** (design §12.8, Operator direction 2026-09-24, cited in
+`reviews/u3-hooks.md`): the neutral engine, Codex shims, a populated Codex `event-map.yaml`, and
+Codex acceptance tests are **not built**. `hooks/eb-shim.sh` / `lib/eb_root.py` / `bin/eb-root.sh`
+are the U2 scaffold's generic multi-harness scaffolding and are **not wired into `hooks/hooks.json`**
+— `PreToolUse`, `SessionStart`, and `SessionEnd` call `scripts/eb-guard.py` /
+`scripts/eb-session-start.sh` / `scripts/eb-session-end.sh` directly (vcs-rails shape), each a
+single Claude-only script with no shim/engine split. The scaffold's T2 Codex stubs stay stubs.
+
 | Obligation (seam) | Claude Code | Codex CLI | Verdict class | Failure class | Fixture |
 | --- | --- | --- | --- | --- | --- |
-| skills | TODO | TODO | TODO | TODO | TODO — portability-contract.md §12 |
-| catalog entry | TODO | TODO | TODO | TODO | TODO — portability-contract.md §13 |
-| agent delivery | TODO | TODO | TODO | TODO | TODO — portability-contract.md §11, Codex ships no plugin-level subagents; delivery is by lifecycle deposit to `~/.codex/agents/` |
-| session_opened | TODO | TODO | TODO | TODO | TODO — portability-contract.md §4 |
-| before_mutation | TODO | TODO | TODO | TODO — Codex cell is `Degraded` until hook trust is armed for the current hook hash (§3) | TODO — portability-contract.md §4 |
-| after_mutation | TODO | TODO | TODO | TODO | TODO — portability-contract.md §4 |
-| subagent_admitted | TODO | TODO | TODO | TODO | TODO — portability-contract.md §4 |
-| subagent_closed | TODO | TODO | TODO | TODO | TODO — portability-contract.md §4 |
-| turn_closed | TODO | TODO | TODO | TODO | TODO — portability-contract.md §4 |
+| skills | TODO | TODO | TODO | TODO | TODO — portability-contract.md §12 (U4) |
+| catalog entry | TODO | TODO | TODO | TODO | TODO — portability-contract.md §13 (U7) |
+| agent delivery | TODO | TODO | TODO | TODO | TODO — portability-contract.md §11 (U4/U7), Codex ships no plugin-level subagents; delivery is by lifecycle deposit to `~/.codex/agents/` |
+| `session_opened` (`SessionStart` → `bd prime` + `BEADS_ACTOR` export + advisory crash sweep) | Prevent/Observe (actor export + advisory) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | advisory | fail-open | `tests/eb-session.test.sh` |
+| `before_mutation` (`PreToolUse(Bash)` → `scripts/eb-guard.py`, the `bd` verb guard) | Prevent (governed seam, fails closed on a recognized `bd` invocation the tokenizer cannot parse) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | governed | deny | `tests/eb-guard.test.sh`, `tests/fixtures/guard/*.json` |
+| `SessionEnd` (release this session's claims) — **no seam in the seven-seam vocabulary**; not amended (design §12.8) | Prevent-adjacent (deterministic release of this session's own claims) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | advisory | fail-open | `tests/eb-session.test.sh` |
+| after_mutation | TODO | TODO | TODO | TODO | TODO — not built this unit |
+| subagent_admitted | TODO | TODO | TODO | TODO | TODO — not built this unit; see "Known gaps" (P5 FAIL) |
+| subagent_closed | TODO | TODO | TODO | TODO | TODO — not built this unit |
+| turn_closed | TODO | TODO | TODO | TODO | TODO — not built this unit |
 | config_changed | TODO | Not available — Claude-only event (§4) | TODO | TODO | TODO |
+
+## Known gaps
+
+- **Subagent actor keying (P5 FAIL, U1).** `$CLAUDE_ENV_FILE` is null at `SubagentStart`, so a
+  subagent cannot get its own `<session_id>/<agent_id>` `BEADS_ACTOR` this way. Subagent claims
+  stay keyed under the **main session's** bare session id. `[unverified]`: whether a `PreToolUse`
+  hook firing on the subagent's own Bash calls receives `agent_id` in its payload — a candidate
+  fix, not built or probed here.
+- **Transition-window scratch `bd init` (P2 PARTIAL, U1).** A `permissions.deny` rule on `bd init`
+  in the live settings wins over this hook's `allow` (confirmed by probe, not inferred). Until
+  U8's retirement commit B removes the settings deny rules, scratch `bd init` for probing/testing
+  is only possible under an isolated settings source
+  (`claude -p --setting-sources "" --settings <file>`), not in a normal session — this guard's
+  scratch-form allow is inert against the live deny in the meantime.
+- **`bd` verb aliases not covered by the guard.** The decision table denies specific verbs
+  (`init` unqualified, `delete`, `remember`, `edit`, `sql`, `create`, `close`,
+  `update --status closed`, `update --append-notes`) and allows everything else, including
+  unknown verbs, per the plan's literal table. `bd` 1.3.0 ships several alias/adjacent
+  subcommands not in that table — `bd q` (quick create, `create`'s alias), `bd note` (append-note
+  alias of `--append-notes`), `bd unclaim`/`bd reclaim`/`bd assign`/`bd set-state` (claim/assign
+  paths adjacent to `--claim`/`--status`) — that route around the corresponding deny. Recorded
+  as a follow-up for U4/U7, not fixed here (out of this unit's literal spec).
+- **`SessionEnd` timing margin.** Measured 750–900ms on a scratch db (`tests/eb-session.test.sh`),
+  under the 1s budget but with limited headroom — the cost is mostly `bd`'s own CLI process
+  startup (one `bd list --json` + one release chain), not this hook's own logic.
 
 ## Install / Update / Uninstall
 - **Install:** `bash scripts/install.sh` (idempotent; non-interactive with `--yes`).
