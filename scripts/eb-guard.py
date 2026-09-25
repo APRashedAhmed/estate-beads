@@ -264,6 +264,13 @@ _WRAPPERS = {
     "sudo": ({"-u", "--user", "-g", "--group", "-p", "--prompt", "-C", "--close-from", "-r", "--role", "-t", "--type", "-h", "--host"}, 0),
     "timeout": ({"-s", "--signal", "-k", "--kill-after"}, 1),  # 1 positional: the duration
     "xargs": ({"-I", "-n", "-P", "-L", "-d", "--delimiter", "-s", "-a", "-E"}, 0),
+    # F2 (guard gap): known coreutil/scheduling wrappers, kept in this same table so they're
+    # skipped exactly like the wrappers above (nice, sudo, timeout, xargs, ...).
+    "stdbuf": ({"-i", "--input", "-o", "--output", "-e", "--error"}, 0),
+    "ionice": ({"-c", "--class", "-n", "--classdata", "-p", "--pid"}, 0),
+    "chrt": ({"-p", "--pid"}, 1),  # 1 positional: the priority value
+    "taskset": (set(), 1),  # 1 positional: the cpu list/mask (`-c LIST` or a bare mask)
+    "unbuffer": (set(), 0),
 }
 
 # --- F3: shells/evaluators whose string ARGUMENT is executed, not merely quoted text ---------
@@ -423,8 +430,8 @@ def _recursive_bd_deny(text, cwd, depth):
 # --- flag parsing over a bd command's args ---------------------------------------------------
 def _flag_value(args, name, short=None):
     """args is the token list AFTER the verb. Returns the value of --name / --name=value (and, if
-    `short` is given, -short / -short=value — F1's `-s`/`-s=` alias of `--status`), or None if
-    the flag is absent."""
+    `short` is given, -short / -short=value / attached -shortvalue — F1's `-s`/`-s=`/`-svalue`
+    alias of `--status`), or None if the flag is absent."""
     long_flag = f"--{name}"
     short_flag = f"-{short}" if short else None
     for i, tok in enumerate(args):
@@ -437,6 +444,10 @@ def _flag_value(args, name, short=None):
                 return args[i + 1]
             if tok.startswith(short_flag + "="):
                 return tok[len(short_flag) + 1 :]
+            # Attached short-flag value: `-sclosed` == `-s closed` (not `-s`, not `-s=...`, but
+            # still prefixed by the short flag with a non-empty remainder).
+            if tok.startswith(short_flag) and tok != short_flag and len(tok) > len(short_flag):
+                return tok[len(short_flag) :]
     return None
 
 

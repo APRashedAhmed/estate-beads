@@ -62,12 +62,21 @@ if [[ -n "$evidence" ]]; then
   [[ "$status" == "in_progress" && "$has_pending" == "1" ]] \
     || die "Bead $id is not acceptance-pending (status=$status). Run bead-report-success.sh first."
 
+  blockers="$(eb_open_blockers "$id")" || die "'bd show --json $id' failed while checking blockers. Nothing was changed."
+  if [[ -n "$blockers" ]]; then
+    printf 'BLOCKED-BY %s\n' "$blockers"
+    exit 1
+  fi
+
   bd update "$id" --append-notes "EVIDENCE: ${evidence}" >/dev/null \
     || die "'bd update $id --append-notes' failed. Fix the reported cause and re-run; nothing was changed."
   bd update "$id" --remove-label "acceptance-pending" >/dev/null \
     || die "the evidence line landed but removing 'acceptance-pending' failed. Run: bd update $id --remove-label acceptance-pending"
   bd close "$id" --reason "accepted ${evidence}" >/dev/null \
-    || die "the label was removed but the close failed. Fix the reported cause, then run: bd close $id --reason 'accepted ${evidence}'"
+    || {
+      bd update "$id" --add-label "acceptance-pending" >/dev/null 2>&1
+      die "the label was removed but 'bd close' failed; restored 'acceptance-pending'. Fix the reported cause, then re-run: bead-accept.sh --id $id --evidence ${evidence}"
+    }
   printf 'CLOSED\n'
   exit 0
 fi
@@ -133,12 +142,23 @@ case "$r_verdict" in
     evidence_line="EVIDENCE: $(printf '%s\n' "${chain[@]}" | paste -sd';' -)"
     case "$b_accept" in
       evidence|independent)
+        # These two modes are the ones that call `bd close` below — check open blockers BEFORE
+        # any mutation so a refusal here changes nothing (accept:operator never closes here; its
+        # eventual close goes through the --evidence form, which checks again there).
+        blockers="$(eb_open_blockers "$r_bead")" || die "'bd show --json $r_bead' failed while checking blockers. Nothing was changed."
+        if [[ -n "$blockers" ]]; then
+          printf 'BLOCKED-BY %s\n' "$blockers"
+          exit 1
+        fi
         bd update "$r_bead" --append-notes "$evidence_line" >/dev/null \
           || die "'bd update $r_bead --append-notes' failed. Fix the reported cause and re-run; nothing was changed."
         bd update "$r_bead" --remove-label "acceptance-pending" >/dev/null \
           || die "the evidence line landed but removing 'acceptance-pending' failed. Run: bd update $r_bead --remove-label acceptance-pending"
         bd close "$r_bead" --reason "accepted ${review}" >/dev/null \
-          || die "the label was removed but the close failed. Fix the reported cause, then run: bd close $r_bead --reason 'accepted ${review}'"
+          || {
+            bd update "$r_bead" --add-label "acceptance-pending" >/dev/null 2>&1
+            die "the label was removed but 'bd close' failed; restored 'acceptance-pending'. Fix the reported cause, then re-run: bead-accept.sh --review ${review}"
+          }
         printf 'CLOSED\n'
         ;;
       operator)
