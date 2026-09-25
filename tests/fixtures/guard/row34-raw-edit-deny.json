@@ -1,7 +1,12 @@
 {
   "id": "row34-raw-edit-deny",
-  "command": "bd edit t-1",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd edit t-1"
+  },
   "cwd": "__CWD__",
-  "expect": "deny",
+  "expected": "deny",
   "reason_contains": "off-limits"
 }

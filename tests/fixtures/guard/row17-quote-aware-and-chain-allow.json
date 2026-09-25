@@ -1,7 +1,12 @@
 {
   "id": "row17-quote-aware-and-chain-allow",
-  "command": "echo \"a && bd close x\"",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "echo \"a && bd close x\""
+  },
   "cwd": "__CWD__",
-  "expect": "allow",
+  "expected": "allow",
   "reason_contains": ""
 }

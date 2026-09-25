@@ -1,7 +1,12 @@
 {
   "id": "row27-update-status-in-progress-allow",
-  "command": "bd update t-1 --status in_progress --assignee alice",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd update t-1 --status in_progress --assignee alice"
+  },
   "cwd": "__CWD__",
-  "expect": "allow",
+  "expected": "allow",
   "reason_contains": ""
 }

@@ -1,12 +1,12 @@
 {
-  "id": "row28-update-status-open-on-open-allow",
+  "id": "row57-quoted-text-with-wrapper-words-allow",
   "session_id": "guard-test",
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
-    "command": "bd update __OPEN_ID__ --status open"
+    "command": "echo \"run bd close later\""
   },
-  "cwd": "__SCRATCH_CWD__",
+  "cwd": "__CWD__",
   "expected": "allow",
   "reason_contains": ""
 }

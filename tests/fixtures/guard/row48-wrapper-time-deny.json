@@ -1,12 +1,12 @@
 {
-  "id": "row05-and-chain-init",
+  "id": "row48-wrapper-time-deny",
   "session_id": "guard-test",
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
-    "command": "cd x && bd init"
+    "command": "time bd close pa-x"
   },
   "cwd": "__CWD__",
   "expected": "deny",
-  "reason_contains": "bd init"
+  "reason_contains": "bead-report-success.sh"
 }

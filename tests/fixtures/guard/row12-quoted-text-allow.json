@@ -1,7 +1,12 @@
 {
   "id": "row12-quoted-text-allow",
-  "command": "echo \"run bd close later\"",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "echo \"run bd close later\""
+  },
   "cwd": "__CWD__",
-  "expect": "allow",
+  "expected": "allow",
   "reason_contains": ""
 }

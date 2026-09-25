@@ -1,12 +1,12 @@
 {
-  "id": "row05-and-chain-init",
+  "id": "row45-keyword-for-do-deny",
   "session_id": "guard-test",
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
-    "command": "cd x && bd init"
+    "command": "for i in a b; do bd close $i; done"
   },
   "cwd": "__CWD__",
   "expected": "deny",
-  "reason_contains": "bd init"
+  "reason_contains": "bead-report-success.sh"
 }

@@ -1,7 +1,12 @@
 {
   "id": "row13-multi-segment-one-denied",
-  "command": "bd list && bd close pa-x",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd list && bd close pa-x"
+  },
   "cwd": "__CWD__",
-  "expect": "deny",
+  "expected": "deny",
   "reason_contains": "bead-report-success.sh"
 }

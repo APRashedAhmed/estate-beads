@@ -1,7 +1,12 @@
 {
   "id": "row14-unknown-verb-allow",
-  "command": "bd frobnicate pa-x",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd frobnicate pa-x"
+  },
   "cwd": "__CWD__",
-  "expect": "allow",
+  "expected": "allow",
   "reason_contains": ""
 }

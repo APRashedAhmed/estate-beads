@@ -1,7 +1,12 @@
 {
   "id": "row08-pipeline-close",
-  "command": "bd close pa-x | cat",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd close pa-x | cat"
+  },
   "cwd": "__CWD__",
-  "expect": "deny",
+  "expected": "deny",
   "reason_contains": "bead-report-success.sh"
 }

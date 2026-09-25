@@ -1,7 +1,12 @@
 {
   "id": "row30-update-status-open-bd-show-fails-deny",
-  "command": "bd update t-doesnotexist --status open",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd update t-doesnotexist --status open"
+  },
   "cwd": "__SCRATCH_CWD__",
-  "expect": "deny",
+  "expected": "deny",
   "reason_contains": "bead-accept.sh"
 }

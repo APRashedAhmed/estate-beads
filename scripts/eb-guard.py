@@ -41,10 +41,24 @@ DENY_MESSAGES = {
     "sql": "bd sql is denied. There is no script wrapper; this operation is off-limits from a Bash call.",
     "create": "Raw bd create is denied. Use scripts/create-bead.sh (single Bead) or scripts/create-beads-batch.sh (many from one artifact).",
     "close": "Raw bd close is denied. Use scripts/bead-report-success.sh, scripts/bead-accept.sh, or scripts/bead-reopen.sh.",
+    "reopen": "Raw bd reopen is denied. Use scripts/bead-reopen.sh.",
     "update-status-closed": "Raw `bd update --status closed` is denied. Use scripts/bead-report-success.sh, scripts/bead-accept.sh, or scripts/bead-reopen.sh.",
     "update-status-open-on-closed": "Raw `bd update --status open` on a closed Bead is denied. Use scripts/bead-report-success.sh, scripts/bead-accept.sh, or scripts/bead-reopen.sh.",
     "update-append-notes": "Raw `bd update --append-notes` is denied. Use scripts/bead-progress.sh (the rule-5 note carrier).",
     "parse-failure": "This command could not be parsed and appears to invoke `bd` — denied to fail closed (a governed seam denies on a recognized failure state).",
+}
+
+# --- F1: verb-alias -> canonical-verb table -------------------------------------------------
+# `bd` 1.3.0 ships alias/adjacent subcommands that reach the same guarded operation as a denied
+# canonical verb. Every row here is a VERB TOKEN the guard must judge exactly like its canonical
+# counterpart (per-Bead `bd close --help` / `bd create --help` / `bd update --help` output,
+# checked live on this bd 1.3.0). Kept as an explicit table (not folded into the verb match
+# below) so a future alias addition is a one-line diff here, not a scattered edit.
+VERB_ALIASES = {
+    "done": "close",  # `bd close --help`: "Aliases: close, done"
+    "new": "create",  # `bd create --help`: "Aliases: create, new"
+    "q": "create",  # `bd q` = quick create, a top-level verb functionally aliasing `create`
+    "note": "update-append-notes",  # `bd note` = shorthand for `bd update <id> --append-notes`
 }
 
 BD_TOKEN_RE = re.compile(r"\bbd\b")
@@ -231,12 +245,61 @@ _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 # `env` flags that take a following value token (the value must be skipped too), vs. bare flags.
 _ENV_VALUE_FLAGS = {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"}
 
+# --- F2: shell reserved words the guard must see through ------------------------------------
+# These precede a command in normal shell grammar (`if bd close x; then ...`, `! bd close x`,
+# `time bd close x`) but never take their own option/value tokens — a single-token skip.
+_RESERVED_WORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "time"}
 
-def _find_bd_invocation(segment):
-    """Return (bd_index, verb_or_None) if this segment invokes `bd`, else None. Skips a leading
-    `env` invocation's OWN flags (`-u NAME`, `-C DIR`, ...) and `VAR=val` words, and a leading
-    `command` builtin, so `env -u BEADS_DIR bd ...` / `command bd ...` are recognized as
-    bd-invocations with `bd` as the resolved token, not `-u`/`BEADS_DIR`."""
+# --- F2: wrapper commands with their OWN options/values, skipped before landing on `bd` ------
+# name -> (set of flags that consume a following value token, number of trailing positionals to
+# skip AFTER the flags before the wrapped command starts — e.g. `timeout 5 bd ...`'s duration).
+_WRAPPERS = {
+    "nohup": (set(), 0),
+    "exec": (set(), 0),
+    "command": (set(), 0),
+    "nice": ({"-n"}, 0),
+    "sudo": ({"-u", "--user", "-g", "--group", "-p", "--prompt", "-C", "--close-from", "-r", "--role", "-t", "--type", "-h", "--host"}, 0),
+    "timeout": ({"-s", "--signal", "-k", "--kill-after"}, 1),  # 1 positional: the duration
+    "xargs": ({"-I", "-n", "-P", "-L", "-d", "--delimiter", "-s", "-a", "-E"}, 0),
+}
+
+# --- F3: shells/evaluators whose string ARGUMENT is executed, not merely quoted text ---------
+# A `bd` token inside this string is an invocation (design §12.1 bypass table), never allowed as
+# "quoted text mentioning bd" — that allow row is for a non-executing command (e.g. `echo "..."`).
+_SHELL_C_NAMES = {"bash", "sh", "zsh", "dash", "ksh"}
+
+
+def _skip_wrapper_prefix(segment, i):
+    """From index i, skip one leading reserved word OR one wrapper invocation (name + its own
+    flags/values + its skip-count positionals). Returns the new index, or i unchanged if nothing
+    at position i is a reserved word or known wrapper."""
+    n = len(segment)
+    tok = segment[i]
+    if tok in _RESERVED_WORDS:
+        return i + 1
+    if tok in _WRAPPERS:
+        value_flags, positionals = _WRAPPERS[tok]
+        j = i + 1
+        while j < n and segment[j].startswith("-") and segment[j] not in ("--",):
+            if segment[j] in value_flags and j + 1 < n:
+                j += 2
+            else:
+                j += 1
+        skipped = 0
+        while j < n and skipped < positionals and not segment[j].startswith("-"):
+            j += 1
+            skipped += 1
+        return j
+    return i
+
+
+def _advance_past_prefixes(segment):
+    """Skip a leading `env` invocation's OWN flags (`-u NAME`, `-C DIR`, ...), `VAR=val` words,
+    shell reserved words (`if`/`then`/.../`time`), and known wrappers with their own
+    options/values (`timeout N`, `nohup`, `sudo [opts]`, `exec`, `command`, `nice [-n N]`,
+    `xargs [opts]`, ...) — repeatedly, since these can stack (`sudo timeout 5 bd ...`). Returns
+    the index of the first token that is none of the above (the real command name), or len(segment)
+    if the whole segment is consumed."""
     i = 0
     n = len(segment)
     in_env = False
@@ -252,13 +315,24 @@ def _find_bd_invocation(segment):
             else:
                 i += 1
             continue
-        if tok == "command":
-            i += 1
-            continue
         if _ASSIGN_RE.match(tok):
             i += 1
             continue
+        new_i = _skip_wrapper_prefix(segment, i)
+        if new_i != i:
+            i = new_i
+            continue
         break
+    return i
+
+
+def _find_bd_invocation(segment):
+    """Return (bd_index, verb_or_None) if this segment invokes `bd`, else None — so `env -u
+    BEADS_DIR bd ...` / `command bd ...` / `if bd ...` / `timeout 5 bd ...` / `sudo bd ...` are
+    all recognized as bd-invocations with `bd` as the resolved token, never one of the
+    prefix tokens (see `_advance_past_prefixes`)."""
+    i = _advance_past_prefixes(segment)
+    n = len(segment)
     if i >= n:
         return None
     if os.path.basename(segment[i]) != "bd":
@@ -267,17 +341,99 @@ def _find_bd_invocation(segment):
     return (i, verb)
 
 
+# --- F3: does this segment execute a shell-string argument (bash -c '...', eval '...') --------
+_SHELL_C_FLAG_RE = re.compile(r"^-[a-zA-Z]*c[a-zA-Z]*$")  # -c, -lc, -ec, -xc, ... (any -c combo)
+
+
+def _find_shell_exec_string(segment):
+    """Return the string argument that a shell-executing wrapper would run as a command, or None.
+    Covers `bash -c "..."` / `sh -c '...'` / `zsh -c ...` / `dash -c ...` / `ksh -c ...` (any
+    option combination containing `c`, e.g. `-lc`) and `eval "..."` (its args, space-joined, per
+    real eval semantics) — after skipping the same prefixes `_find_bd_invocation` skips, so
+    `sudo bash -c "bd close x"` / `env FOO=1 eval "bd close x"` are still recognized."""
+    i = _advance_past_prefixes(segment)
+    n = len(segment)
+    if i >= n:
+        return None
+    name = os.path.basename(segment[i])
+    if name in _SHELL_C_NAMES:
+        j = i + 1
+        while j < n and segment[j].startswith("-"):
+            if _SHELL_C_FLAG_RE.match(segment[j]):
+                # The first non-flag token after the -c-bearing flag is the script string.
+                if j + 1 < n:
+                    return segment[j + 1]
+                return None
+            j += 1
+        return None
+    if name == "eval":
+        rest = segment[i + 1 :]
+        if not rest:
+            return None
+        return " ".join(rest)
+    return None
+
+
+def _skip_global_flags(args):
+    """F5: `bd --json close pa-x` / `bd -q close pa-x` — global flags may precede the verb.
+    Returns the index of the first non-flag token (the verb), or len(args) if none. Skips the
+    value token of any global flag known to take one."""
+    value_flags = {
+        "--database", "--db", "-C", "--directory", "--dolt-auto-commit", "--mem-profile",
+    }
+    i = 0
+    n = len(args)
+    while i < n and args[i].startswith("-"):
+        tok = args[i]
+        name = tok.split("=", 1)[0]
+        if name in value_flags:
+            if "=" in tok:
+                i += 1
+            elif i + 1 < n:
+                i += 2
+            else:
+                i += 1
+        else:
+            i += 1
+    return i
+
+
+def _recursive_bd_deny(text, cwd, depth):
+    """F3: does executing `text` as a nested shell command invoke a `bd` verb the guard would
+    deny? Recurses through the same tokenizer/judge path (same `cwd`, so `bd show`/scratch-init
+    checks inside the nested string still see the real hook payload's cwd). Returns a
+    deny-reason-key, or None. Depth-capped against pathological nesting; a ParseFailure that
+    still textually mentions `bd` fails closed, matching the top-level contract."""
+    if depth > 8:
+        return "parse-failure" if BD_TOKEN_RE.search(text) else None
+    try:
+        segments = tokenize_segments(text)
+    except ParseFailure:
+        return "parse-failure" if BD_TOKEN_RE.search(text) else None
+    for seg in segments:
+        verdict = judge_segment(seg, cwd, depth=depth + 1)
+        if verdict is not None:
+            return verdict
+    return None
+
+
 # --- flag parsing over a bd command's args ---------------------------------------------------
-def _flag_value(args, name):
-    """args is the token list AFTER the verb. Returns the value of --name / --name=value, or
-    None if the flag is absent. Returns "" (present, no explicit value) is not applicable here —
-    every flag we check always takes a value."""
+def _flag_value(args, name, short=None):
+    """args is the token list AFTER the verb. Returns the value of --name / --name=value (and, if
+    `short` is given, -short / -short=value — F1's `-s`/`-s=` alias of `--status`), or None if
+    the flag is absent."""
     long_flag = f"--{name}"
+    short_flag = f"-{short}" if short else None
     for i, tok in enumerate(args):
         if tok == long_flag and i + 1 < len(args):
             return args[i + 1]
         if tok.startswith(long_flag + "="):
             return tok[len(long_flag) + 1 :]
+        if short_flag:
+            if tok == short_flag and i + 1 < len(args):
+                return args[i + 1]
+            if tok.startswith(short_flag + "="):
+                return tok[len(short_flag) + 1 :]
     return None
 
 
@@ -345,51 +501,75 @@ def _bd_show_status(bead_id, cwd):
 
 
 # --- per-segment verdict -----------------------------------------------------------------------
-def judge_segment(segment, cwd):
+def judge_segment(segment, cwd, depth=0):
     """Return None (allow) or a deny-reason-key string (see DENY_MESSAGES)."""
     found = _find_bd_invocation(segment)
-    if found is None:
-        return None
-    bd_index, verb = found
-    pre_tokens = segment[:bd_index]
+    if found is not None:
+        bd_index, _raw_verb = found
+        pre_tokens = segment[:bd_index]
+        rest = segment[bd_index + 1 :]
 
-    if verb is None:
-        return None  # bare `bd`, no verb: nothing to deny against
+        # F5: global flags (`--json`, `-q`, `--db PATH`, ...) may precede the verb.
+        gi = _skip_global_flags(rest)
+        verb = rest[gi] if gi < len(rest) else None
+        args = rest[gi + 1 :]
 
-    if verb == "init":
-        if _is_scratch_env_prefix(pre_tokens) and _cwd_outside_git_repo(cwd):
-            return None
-        return "init"
+        if verb is None:
+            return None  # bare `bd` (optionally with only global flags): nothing to deny against
 
-    if verb in ("delete", "remember", "edit", "sql"):
-        return verb
+        # F1: canonicalize aliases (`done`->close, `new`/`q`->create, `note`->update-append-notes)
+        # before judging, so an alias is denied with the SAME message as its canonical verb.
+        canonical = VERB_ALIASES.get(verb, verb)
 
-    if verb == "create":
-        return "create"
-
-    if verb == "close":
-        return "close"
-
-    if verb == "update":
-        args = segment[bd_index + 2 :]
-        if _flag_present(args, "append-notes"):
-            return "update-append-notes"
-        status = _flag_value(args, "status")
-        if status is not None:
-            status_l = status.strip().lower()
-            if status_l == "closed":
-                return "update-status-closed"
-            if status_l == "open":
-                bead_id = _first_positional(args)
-                current = _bd_show_status(bead_id, cwd)
-                if current is None:
-                    return "update-status-open-on-closed"  # bd show failed -> fail closed
-                if current == "closed":
-                    return "update-status-open-on-closed"
+        if canonical == "init":
+            if _is_scratch_env_prefix(pre_tokens) and _cwd_outside_git_repo(cwd):
                 return None
-        return None
+            return "init"
 
-    return None  # every other verb (list, show, ready, search, dep, prime, sync, unknown...): allow
+        if canonical in ("delete", "remember", "edit", "sql"):
+            return canonical
+
+        if canonical == "reopen":  # F6
+            return "reopen"
+
+        if canonical == "create":
+            return "create"
+
+        if canonical == "close":
+            return "close"
+
+        if canonical == "update-append-notes":  # `bd note <id> "text"` (F1 alias)
+            return "update-append-notes"
+
+        if canonical == "update":
+            if _flag_present(args, "append-notes"):
+                return "update-append-notes"
+            status = _flag_value(args, "status", short="s")  # F1: `-s`/`-s=` alias of `--status`
+            if status is not None:
+                status_l = status.strip().lower()
+                if status_l == "closed":
+                    return "update-status-closed"
+                if status_l == "open":
+                    bead_id = _first_positional(args)
+                    current = _bd_show_status(bead_id, cwd)
+                    if current is None:
+                        return "update-status-open-on-closed"  # bd show failed -> fail closed
+                    if current == "closed":
+                        return "update-status-open-on-closed"
+                    return None
+            return None
+
+        return None  # every other verb (list, show, ready, search, dep, prime, sync, unknown...): allow
+
+    # No direct `bd` token in command position: is this segment a shell/eval executing a STRING
+    # argument that itself invokes `bd` (F3)? `bash -c "bd close x"` / `eval "bd close x"` — a
+    # `bd` token inside such a string is an invocation, never merely "quoted text mentioning bd"
+    # (that allow row is for a non-executing command like `echo "run bd close later"`, which this
+    # check never reaches since `echo` isn't in `_SHELL_C_NAMES` or `eval`).
+    exec_str = _find_shell_exec_string(segment)
+    if exec_str is not None:
+        return _recursive_bd_deny(exec_str, cwd, depth)
+    return None
 
 
 def judge_command(command, cwd):

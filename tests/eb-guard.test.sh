@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # eb-guard.test.sh — fixture-driven test for scripts/eb-guard.py (design §12.1, plan U3 decision
-# table). One fixture per tests/fixtures/guard/*.json row; each fixture is fed to the guard as a
-# real PreToolUse stdin payload (never a mocked internal call) and the observed verdict is
-# compared against the fixture's `expect`/`reason_contains`. Prints one
+# table). One fixture per tests/fixtures/guard/*.json row; each fixture IS a real PreToolUse hook
+# payload (`session_id`, `hook_event_name`, `tool_name`, `tool_input.command`, `cwd`) plus
+# `expected`/`reason_contains` (fix round 1, F7) — `python3 scripts/eb-guard.py < fixture.json`
+# is meaningful on its own for any fixture with no `__PLACEHOLDER__` token. Rows that DO carry a
+# placeholder (`__CWD__`, `__OPEN_ID__`, `__SCRATCH_CWD__`, ...) need this script's substitution
+# to resolve a real scratch db / temp dir — THIS is the only sanctioned driver for those rows.
+# The observed verdict is compared against the fixture's `expected`/`reason_contains`. Prints one
 # "fixture -> observed verdict" line per file so the U3 report's decision table is a paste.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -45,16 +49,15 @@ def sub(s):
               .replace("__OPEN_ID__", open_id)
               .replace("__CLOSED_ID__", closed_id))
 
-command = sub(fx["command"])
-cwd = sub(fx["cwd"])
-payload = json.dumps({
-    "session_id": "guard-test",
-    "cwd": cwd,
-    "hook_event_name": "PreToolUse",
-    "tool_name": "Bash",
-    "tool_input": {"command": command},
-    "transcript_path": None,
-})
+# The fixture IS the payload shape already (F7) — substitute placeholders in place and pipe it
+# straight through, rather than reassembling a payload from ad hoc top-level keys.
+payload_obj = dict(fx)
+payload_obj["tool_input"] = {"command": sub(fx["tool_input"]["command"])}
+payload_obj["cwd"] = sub(fx["cwd"])
+payload_obj.setdefault("transcript_path", None)
+payload_obj.pop("expected", None)
+payload_obj.pop("reason_contains", None)
+payload = json.dumps(payload_obj)
 
 r = subprocess.run(["python3", guard], input=payload, capture_output=True, text=True)
 stdout = r.stdout.strip()
@@ -67,7 +70,7 @@ if observed == "deny":
     except Exception:
         reason = "<unparseable deny envelope>"
 
-print(f"FIXTURE_RESULT\t{fx['id']}\t{fx['expect']}\t{observed}\t{r.returncode}\t{reason}")
+print(f"FIXTURE_RESULT\t{fx['id']}\t{fx['expected']}\t{observed}\t{r.returncode}\t{reason}")
 PYEOF
 }
 
