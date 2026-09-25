@@ -177,3 +177,14 @@ scoping lever) is the operative rule that survives; this paragraph is the incide
 - **Update:** re-run `bash scripts/install.sh` (idempotent; reconciles installed state to this version).
 - **Uninstall:** `bash scripts/uninstall.sh` removes the mechanism and preserves your data;
   `bash scripts/uninstall.sh --purge-data` also removes accumulated data.
+- **Checkpoint-registry cutover (manual, operator-owned):** this plugin ships
+  `seed/estate-beads-report.yaml`, the checkpoint closeout participant descriptor. The
+  checkpointing plugin's registry glob (`ckpt-participants.sh`) only matches
+  `~/.claude/checkpoint.d/*.yml` — copy the seed to
+  `~/.claude/checkpoint.d/estate-beads-report.yml`, renaming `.yaml` → `.yml` on
+  placement; a copy left as `.yaml` is silently invisible to the registry. The
+  descriptor's `id: estate-beads-report` must equal the filename stem
+  (`estate-beads-report`) — it already does; do not edit `id:` when placing it. The
+  checkpointing dispatcher supplies `CKPT_HANDOFF_PATH` (the archived handoff's path)
+  as an environment variable to this `kind: shell` participant's run line on a
+  closeout event; `scripts/eb-closeout-report.sh` reads it (falling back to `$1`).
