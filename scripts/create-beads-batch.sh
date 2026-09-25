@@ -168,7 +168,8 @@ for i in $(seq 0 $((n_units - 1))); do
       [[ "$e_accept" != "$w_accept" ]] && hint="${hint}${e_accept:-accept:<none>} -> ${w_accept}; "
       [[ "$e_class"  != "$w_class"  ]] && hint="${hint}${e_class:-class:<none>} -> ${w_class}; "
       printf 'EXISTS: %s\n' "$existing_id" >&2
-      printf '%s: key "%s" drifted from the artifact: %s\n' "$SELF" "$key" "${hint%%; }" >&2
+      printf '%s: key "%s" drifted from the artifact: %s. Remedy: bd update %s to match the drifted field(s), or give the artifact unit a different --key if it names a different Bead.\n' \
+        "$SELF" "$key" "${hint%%; }" "$existing_id" >&2
       id_map["$key"]="$existing_id"
       printf '%s %s\n' "$key" "$existing_id"
     fi
