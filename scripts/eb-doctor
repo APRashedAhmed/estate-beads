@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""eb-doctor — read-only diagnostic for estate-beads's multi-harness state.
+
+Implements portability-contract.md §10 "Doctor contract". Stdlib only; never writes anything,
+anywhere. Reports, in order: (1) detected harness(es) + version; (2) adapter revision (each
+adapters/<provider>/event-map.yaml's seam count); (3) resolved roots (plugin/project/data, with
+resolution source, via the lib/eb_root.py twin); (4) generated-view drift
+(gen-manifests.py / gen-agents.py --check — GEN_MANIFESTS_PY / GEN_AGENTS_PY override the
+generator path exactly like scripts/check-views.sh, falling back to the same sibling-search when
+unset; "unknown" when neither finds a generator, e.g. an installed clone outside the workspace,
+per lifecycle-contract.md §"Provider obligations" #1); (5) Codex hook-trust state, scanned from
+~/.codex/config.toml (CODEX_HOME override honored) for a `hooks.state."estate-beads@..."` row — a
+plugin registers with Codex under its plugin.json `name` (the `<plugin>@<marketplace>` install
+identifier), NOT this plugin's separate --prefix namespace convention; "unknown" is reported as
+NOT ARMED, because an untrusted hook is silently skipped (§3, probe P-B); (6) the §3 capability
+table as resolved on this machine.
+
+Exit: 0 healthy | 1 degraded (unarmed trust, missing optional harness, or an unresolved PROJECT
+root — a defined answer per portability-contract.md §6) | 2 broken (generated-view drift, an
+unresolved PLUGIN root or data dir, a missing/unparsable adapter, or an unmappable event) |
+64 usage error — the §10 exit table verbatim.
+"""
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+PREFIX = "eb"          # namespace prefix: state files, launchers, deposited TOML names
+PLUGIN_NAME = "estate-beads"       # plugin.json `name`: what Codex registers hooks.state trust under
+
+
+def _run(args):
+    try:
+        return subprocess.run(args, capture_output=True, text=True, check=False)
+    except OSError:
+        return None
+
+
+def detect_harnesses():
+    found = []
+    for h in ("claude", "codex"):
+        path = shutil.which(h)
+        if not path:
+            continue
+        r = _run([h, "--version"])
+        ver = r.stdout.strip() if r and r.returncode == 0 else "unknown"
+        found.append((h, path, ver))
+    return found
+
+
+def seam_count(event_map_path: Path):
+    if not event_map_path.is_file():
+        return None
+    text = event_map_path.read_text()
+    return len(re.findall(r"^\s*seam:\s*\S+", text, re.MULTILINE))
+
+
+def resolve_roots():
+    twin = ROOT / "lib" / f"{PREFIX}_root.py"
+    out = {}
+    for cmd in ("plugin", "project", "data"):
+        if not twin.is_file():
+            out[cmd] = (None, "twin missing")
+            continue
+        r = _run([sys.executable, str(twin), "--source", cmd])
+        if r is None or r.returncode not in (0, 3):
+            out[cmd] = (None, f"error (exit {r.returncode if r else '?'})")
+            continue
+        line = r.stdout.strip()
+        if not line:
+            out[cmd] = (None, "unresolved")
+            continue
+        path, _, src = line.partition("\t")
+        out[cmd] = (path or None, src or "unresolved")
+    return out
+
+
+def _find_workspace_gen(name, env_override):
+    # Env override first, exactly like scripts/check-views.sh (same two names), so a relocated
+    # tree isn't stuck reporting "unknown" drift just because the sibling-search can't reach the
+    # workspace from wherever this clone happens to live.
+    override = os.environ.get(env_override)
+    if override:
+        p = Path(override)
+        if p.is_file():
+            return p
+    d = ROOT
+    for _ in range(5):
+        d = d.parent
+        cand = d / "scripts" / name
+        if cand.is_file():
+            return cand
+    return None
+
+
+def check_drift():
+    findings = []
+    gen_manifests = _find_workspace_gen("gen-manifests.py", "GEN_MANIFESTS_PY")
+    if gen_manifests is not None:
+        r = _run([sys.executable, str(gen_manifests), str(ROOT), "--check"])
+        findings.append(("codex plugin.json", r.returncode == 0 if r else None))
+    else:
+        findings.append(("codex plugin.json", None))
+    if (ROOT / "agents").is_dir():
+        gen_agents = _find_workspace_gen("gen-agents.py", "GEN_AGENTS_PY")
+        if gen_agents is not None:
+            r = _run([sys.executable, str(gen_agents), str(ROOT), "--check", "--prefix", PREFIX])
+            findings.append(("codex agent TOMLs", r.returncode == 0 if r else None))
+        else:
+            findings.append(("codex agent TOMLs", None))
+    return findings
+
+
+def codex_trust_state():
+    cfg = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "config.toml"
+    if not cfg.is_file():
+        return "unknown (no config.toml found) — reported as NOT ARMED"
+    text = cfg.read_text(errors="replace")
+    if re.search(r"hooks\.state\.\"" + re.escape(PLUGIN_NAME) + r"@", text):
+        return "a hooks.state row exists for this plugin (hash match not verified — trust re-arms on every hook change, §5.6)"
+    return "NOT ARMED — no hooks.state row found for this plugin"
+
+
+def main(argv):
+    if argv:
+        sys.stderr.write(f"{PREFIX}-doctor: no arguments expected\n")
+        return 64
+
+    exit_code = 0
+    print(f"# {PREFIX}-doctor — portability-contract.md §10")
+
+    print("\n## 1. Detected harness(es)")
+    harnesses = detect_harnesses()
+    if not harnesses:
+        print("  none detected on PATH")
+    for name, path, ver in harnesses:
+        print(f"  {name}: {path} ({ver})")
+
+    print("\n## 2. Adapter revision")
+    for provider in ("claude-code", "codex"):
+        p = ROOT / "adapters" / provider / "event-map.yaml"
+        n = seam_count(p)
+        label = f"{n} seam(s)" if n is not None else "MISSING"
+        print(f"  {provider}: {label}  ({p})")
+        if n is None:
+            exit_code = max(exit_code, 2)
+
+    print("\n## 3. Resolved roots")
+    roots = resolve_roots()
+    for k, (path, src) in roots.items():
+        print(f"  {k}: {path or 'UNRESOLVED'}  (source: {src})")
+    # Ruling (amended §10 wording): PLUGIN root unresolved is exit 2 — the doctor cannot even
+    # locate itself. PROJECT root unresolved is a defined dormancy answer (§6), exit 1.
+    if roots.get("plugin", (None, ""))[0] is None:
+        exit_code = max(exit_code, 2)
+    if roots.get("project", (None, ""))[0] is None:
+        exit_code = max(exit_code, 1)
+
+    print("\n## 4. Generated-view drift")
+    for label, ok in check_drift():
+        state = "unknown (generator not reachable from here)" if ok is None else ("clean" if ok else "DRIFT")
+        print(f"  {label}: {state}")
+        # portability-contract.md §10 exit table: generated-view drift is "broken" (2) — the
+        # installed Codex view no longer matches the canonical source — alongside an unresolved
+        # PLUGIN root or a broken adapter; an unresolved PROJECT root only degrades (1).
+        if ok is False:
+            exit_code = max(exit_code, 2)
+
+    print("\n## 5. Codex hook-trust state")
+    have_codex = any(n == "codex" for n, _, _ in harnesses)
+    if not (ROOT / "hooks" / "hooks.json").is_file():
+        print("  n/a — no hooks/hooks.json shipped")
+    elif not have_codex:
+        print("  n/a — codex not on PATH")
+    else:
+        state = codex_trust_state()
+        print(f"  {state}")
+        if "NOT ARMED" in state or "unknown" in state:
+            exit_code = max(exit_code, 1)
+
+    print("\n## 6. Capability table (this machine)")
+    print("  | Seam | Claude Code | Codex CLI |")
+    print("  | --- | --- | --- |")
+    print("  | before_mutation | Prevent | Degraded — hook trust unarmed unless §5 above says otherwise |")
+    print("  (declared matrix: this plugin's README.md ## Provider support)")
+
+    print(f"\nSTATE: exit {exit_code}")
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

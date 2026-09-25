@@ -1,0 +1,21 @@
+# adapters/codex/event-map.yaml — provider events -> neutral seams. The Codex counterpart of
+# adapters/claude-code/event-map.yaml (portability-contract.md §4): same seven neutral seams,
+# minus `ConfigChange` (Claude-only event — "Not available" on Codex, §4) and with no `matcher`
+# key under `Stop` (Codex ignores `matcher` on `Stop`, §4/§5.2). Codex's default T2 capability
+# on `before_mutation` is `Degraded` until hook trust is armed for the current hook hash (§3) —
+# the doctor (scripts/eb-doctor) reports that state; this map does not encode it.
+SessionStart:
+  seam: session_opened
+PreToolUse:
+  "Bash":
+    seam: before_mutation
+PostToolUse:
+  "Bash":
+    seam: after_mutation
+SubagentStart:
+  seam: subagent_admitted
+  phase: started
+SubagentStop:
+  seam: subagent_closed
+Stop:
+  seam: turn_closed

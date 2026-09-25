@@ -1,0 +1,23 @@
+# adapters/claude-code/event-map.yaml — provider events -> neutral seams. Implements
+# portability-contract.md §4 "Seam vocabulary + event map" — this is the ONLY file where the
+# two vocabularies meet; the engine never names a provider event, only a seam. Scaffolded with
+# all seven neutral seams; at scaffold time only `before_mutation` has a wired shim
+# (hooks/eb-shim.sh + hooks/hooks.json) — extend hooks.json and this map together as
+# you add more.
+SessionStart:
+  seam: session_opened
+PreToolUse:
+  "Bash":
+    seam: before_mutation
+PostToolUse:
+  "Bash":
+    seam: after_mutation
+SubagentStart:
+  seam: subagent_admitted
+  phase: started
+SubagentStop:
+  seam: subagent_closed
+Stop:
+  seam: turn_closed
+ConfigChange:
+  seam: config_changed

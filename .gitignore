@@ -1,0 +1,15 @@
+# Workspace baseline (plugins/CLAUDE.md authoring & hygiene conventions).
+# Ignore git worktrees under .claude/ (one left there is a `git add .` away from
+# vendoring a nested repo) and runtime cruft — but NOT the whole .claude/, so the
+# repo can still ship dev-time skills/settings under .claude/.
+.claude/worktrees/
+.claude/*.local.md
+.claude/scheduled_tasks.lock
+tmp.*
+*.tmp
+__pycache__/
+.pytest_cache/
+.DS_Store
+node_modules/
+.venv/
+dist/

@@ -1,0 +1,8 @@
+{
+  "name": "estate-beads-marketplace",
+  "owner": { "name": "aprashedahmed" },
+  "description": "Standalone marketplace for the estate-beads plugin.",
+  "plugins": [
+    { "name": "estate-beads", "source": "./", "description": "Beads work-tracking for the estate: create, claim, report, accept, release and guard bd" }
+  ]
+}

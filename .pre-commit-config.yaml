@@ -1,0 +1,23 @@
+---
+repos:
+  - repo: local
+    hooks:
+      - id: adr-rules-conformance
+        name: Every ADR has required frontmatter and a Rules section
+        language: system
+        entry: adr check --dir decisions
+        files: ^decisions/ADR-.*\.md$
+        pass_filenames: true
+        require_serial: true
+      - id: adr-readme-index
+        name: Regenerate and stage the ADR README index
+        language: system
+        entry: adr gen --dir decisions --stage
+        files: ^decisions/ADR-.*\.md$
+        pass_filenames: false
+      - id: plugin-convention-audit
+        name: Workspace convention audit (--local self-contained checks)
+        language: system
+        entry: scripts/precommit-audit.sh
+        pass_filenames: false
+        always_run: true
