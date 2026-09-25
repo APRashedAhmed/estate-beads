@@ -9,7 +9,7 @@ Contract (design §12.1 / portability-contract.md §7, governed seam, fails clos
     shell) is DENIED.
   - Every other recognized `bd` invocation is judged verb-by-verb per the decision table below.
 
-Tokenization: split on `&&`, `||`, `;`, `|`, and (quote-aware) bare newlines, recursing into
+Tokenization: split on `&&`, `||`, `;`, `|`, `&`, `|&`, and (quote-aware) bare newlines, recursing into
 `$( )`, backtick, and `( )` bodies and heredoc bodies. A segment "invokes bd" when its first
 token — after stripping leading `env` words, `VAR=val` words, and `command` — has basename `bd`.
 
@@ -143,7 +143,9 @@ def _normalize_newlines(command: str) -> str:
 
 
 # --- tokenize + segment split ---------------------------------------------------------------
-_OPERATORS = ("&&", "||", ";", "|")
+# `&` (background) and `|&` (pipe stdout+stderr) are command SEPARATORS just like `;`/`|` — a
+# segment after either still gets its own independent verdict.
+_OPERATORS = ("&&", "||", ";", "|", "&", "|&")
 
 
 def _shlex_tokens(text: str):

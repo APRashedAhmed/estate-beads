@@ -52,9 +52,9 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
 | skills | TODO | TODO | TODO | TODO | TODO — portability-contract.md §12 (U4) |
 | catalog entry | TODO | TODO | TODO | TODO | TODO — portability-contract.md §13 (U7) |
 | agent delivery | TODO | TODO | TODO | TODO | TODO — portability-contract.md §11 (U4/U7), Codex ships no plugin-level subagents; delivery is by lifecycle deposit to `~/.codex/agents/` |
-| `session_opened` (`SessionStart` → `bd prime` + `BEADS_ACTOR` export + advisory crash sweep) | Prevent/Observe (actor export + advisory) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | advisory | fail-open | `tests/eb-session.test.sh` |
+| `session_opened` (`SessionStart` → `bd prime` + `BEADS_ACTOR` export + advisory crash sweep) | Observe (records/exports; rejects nothing) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | advisory | fail-open | `tests/eb-session.test.sh` |
 | `before_mutation` (`PreToolUse(Bash)` → `scripts/eb-guard.py`, the `bd` verb guard) | Prevent (governed seam, fails closed on a recognized `bd` invocation the tokenizer cannot parse) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | governed | deny | `tests/eb-guard.test.sh`, `tests/fixtures/guard/*.json` |
-| `SessionEnd` (release this session's claims) — **no seam in the seven-seam vocabulary**; not amended (design §12.8) | Prevent-adjacent (deterministic release of this session's own claims) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | advisory | fail-open | `tests/eb-session.test.sh` |
+| `SessionEnd` (release this session's claims) — **no seam in the seven-seam vocabulary**; not amended (design §12.8) | Observe (acts deterministically on this session's own claims; rejects nothing — the least-wrong of the six §3 values for a non-rejecting seam) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | advisory | fail-open | `tests/eb-session.test.sh` |
 | after_mutation | TODO | TODO | TODO | TODO | TODO — not built this unit |
 | subagent_admitted | TODO | TODO | TODO | TODO | TODO — not built this unit; see "Known gaps" (P5 FAIL) |
 | subagent_closed | TODO | TODO | TODO | TODO | TODO — not built this unit |
@@ -82,9 +82,24 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
   alias of `--append-notes`), `bd unclaim`/`bd reclaim`/`bd assign`/`bd set-state` (claim/assign
   paths adjacent to `--claim`/`--status`) — that route around the corresponding deny. Recorded
   as a follow-up for U4/U7, not fixed here (out of this unit's literal spec).
-- **`SessionEnd` timing margin.** Measured 750–900ms on a scratch db (`tests/eb-session.test.sh`),
-  under the 1s budget but with limited headroom — the cost is mostly `bd`'s own CLI process
-  startup (one `bd list --json` + one release chain), not this hook's own logic.
+- **`SessionEnd` timing margin, n=1.** Measured 750–900ms on a scratch db
+  (`tests/eb-session.test.sh`) for **one** claimed Bead; each `bead-release.sh` chain is ~4 `bd`
+  invocations (~600ms), so a session releasing two or more claims risks exceeding Claude's
+  documented ~1.5s total `SessionEnd` budget (portability-contract.md §5.5) — the harness, not
+  `hooks.json`'s own `"timeout": 5`, is what actually caps this. Not fixed here; flagged for U7.
+- **Wrapper/keyword commands the guard does not special-case.** `bash -c "bd close x"`, `sh -c
+  ...`, `eval "..."`, `xargs bd ...`, `timeout 5 bd ...`, `nohup bd ...`, `time bd ...`, `sudo bd
+  ...`, `if bd close x; then ...`, `! bd ...` all fall to "first token isn't `bd`" and are
+  allowed — same class of gap as the verb aliases above, not covered by the plan's literal
+  decision table. The quoted-string cases (`bash -c 'bd close x'` as a literal string argument)
+  are spec-sanctioned by the "quoted text → allow" row; the executable-wrapper cases are not.
+- **Scratch-allow reachability, checked live:** `git -C $SEAT_ROOT/scratch rev-parse --git-dir`
+  and `git -C $SEAT_ROOT rev-parse --git-dir` both report "not a git repository" — the scratch
+  form's cwd-outside-git-repo check is satisfiable at the estate's actual scratch path.
+- **`update --status open` id detection is the first non-flag token**, so a flag value that
+  itself looks positional (e.g. an id-shaped `--if-assignee` value preceding the real id) could
+  be misread as the id. The failure direction is safe (an unresolvable/wrong id makes `bd show`
+  fail, which fails closed to deny), never a false allow.
 
 ## Install / Update / Uninstall
 - **Install:** `bash scripts/install.sh` (idempotent; non-interactive with `--yes`).
