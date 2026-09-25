@@ -37,4 +37,25 @@ notpending="$(scripts/create-bead.sh --title "NotPending" --description d --acce
 out="$(scripts/bead-accept.sh --id "$notpending" --evidence "$scratch/no.txt" 2>&1)"; rc=$?
 assert_rc "refuses a Bead that is not acceptance-pending" 1 "$rc"
 
+# --- atomic close: an open blocker refuses before any mutation -------------------------------
+blocker="$(scripts/create-bead.sh --title "Blocker" --description d --acceptance a --project p --accept evidence --recognized-by x)"
+blocked="$(scripts/create-bead.sh --title "Blocked" --description d --acceptance a --project p --accept evidence --recognized-by x)"
+bd dep "$blocker" --blocks "$blocked" >/dev/null
+scripts/bead-claim.sh --id "$blocked" --model sonnet >/dev/null
+bd update "$blocked" --append-notes "EVIDENCE: initial report" >/dev/null
+bd update "$blocked" --add-label "acceptance-pending" >/dev/null
+before_bead="$(bd show --json "$blocked" 2>/dev/null | jq -c '.[0]')"
+out="$(scripts/bead-accept.sh --id "$blocked" --evidence "$scratch/blocked.txt")"; rc=$?
+assert_eq "open blocker prints BLOCKED-BY" "BLOCKED-BY $blocker" "$out"
+assert_rc "open blocker exits 1" 1 "$rc"
+after_bead="$(bd show --json "$blocked" 2>/dev/null | jq -c '.[0]')"
+assert_eq "label/status/notes unchanged when blocked" \
+  "$(printf '%s' "$before_bead" | jq -c '{status, labels, notes}')" \
+  "$(printf '%s' "$after_bead" | jq -c '{status, labels, notes}')"
+
+bd close "$blocker" --reason "unblock" >/dev/null
+out="$(scripts/bead-accept.sh --id "$blocked" --evidence "$scratch/blocked.txt")"; rc=$?
+assert_eq "closes once the blocker is closed" "CLOSED" "$out"
+assert_rc "exits 0 once unblocked" 0 "$rc"
+
 eb_report

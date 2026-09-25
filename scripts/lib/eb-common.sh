@@ -62,6 +62,21 @@ eb_detect_model() {
   printf '%s\n' "$family"
 }
 
+# --- Open-blocker check (atomic-close fix) ---------------------------------------------------
+# `bd close` refuses (without --force) when the Bead has an open `blocks` dependency (a Bead
+# whose status is not closed, listed against this Bead with dependency_type "blocks" — i.e. it
+# blocks this Bead / this Bead is blocked-by it). Callers MUST run this BEFORE any mutation and
+# refuse atomically (no partial state change) when it reports blockers.
+# Prints a comma-joined list of open blocker ids on stdout (empty if none). Returns 1 (prints
+# nothing) if `bd show --json` itself failed — callers must fail closed on that, same as any
+# other `bd show` failure.
+eb_open_blockers() {  # <id> -> comma-joined open blocker ids on stdout
+  local id="$1" json
+  json="$(bd show --json "$id" 2>/dev/null)" || return 1
+  printf '%s' "$json" \
+    | jq -r '(.[0].dependencies // []) | map(select((.dependency_type == "blocks" or .dependency_type == "blocked-by") and .status != "closed") | .id) | join(",")'
+}
+
 # --- Frontmatter reader (decision 5) ---------------------------------------------------------
 # Print a review report's YAML frontmatter as JSON on stdout. Uses the vendored python3 helper
 # (PyYAML) rather than yq so the parser is stable across yq's Go/Python variants.
