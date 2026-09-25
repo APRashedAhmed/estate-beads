@@ -55,13 +55,15 @@ only what survives as judgment; the guard's own deny message carries the rest.
    - `accept:evidence` → closes now, prints `CLOSED`.
    - `accept:operator` → prints `ACCEPTANCE-PENDING operator` and stops; the operator closes.
    - `accept:independent` → prints `ACCEPTANCE-PENDING review`. Spawn a fresh auditor one tier above
-     your `executor.model` (never a fork — a forked reviewer shares the very context the review
-     exists to check), with `references/review-brief.md` appended to its brief. Take the report it
-     returns and run `scripts/bead-accept.sh --review <report>`, then branch on its line:
+     your `executor.model` (same tier only when you are `fable`, the top of the ladder; never a
+     fork — a forked reviewer shares the very context the review exists to check), with
+     `references/review-brief.md` appended to its brief. An orchestrator does the same for the
+     units it delegated. Take the report it returns and run `scripts/bead-accept.sh --review
+     <report>`, then branch on its line:
      - `CLOSED` — accepted; you are done.
      - `FAILED <cycles-left>` — the closer wrote a new `NEXT:` at the report's path and decremented
        the budget; resume from that `NEXT:`. At zero cycles the closer instead prints `HALTED`.
-     - `HALTED [<reason>]` — the closer already released your claim; stop and escalate (rule 8).
+     - `HALTED [<reason>]` — stop; the `halt:*` label already returns the Bead to the operator.
      - `INCOMPLETE` — the Bead is unchanged and no cycle was spent; re-brief the reviewer.
 
    A later FAIL review citing the closing PASS report reopens a closed Bead through
@@ -98,15 +100,5 @@ Each carrier holds what only it can hold.
 `--next` alone prints just the current `NEXT:` value from rule 5's block, plain text, for a caller
 that wants the next action without the rest of the read.
 
-## Scripts that mechanise a rule
-
-| Rule | Script |
-|---|---|
-| 2 | `bead-claim.sh` — `CLAIMED` \| `LOST`, records `executor.model` |
-| 5 | `bead-progress.sh` — rewrite-in-place; append is unreachable, on- or off-script |
-| 7 | `bead-release.sh` — `RELEASED`; the SessionEnd hook is the session-end backstop |
-| 9 | `bead-report-success.sh` — `CLOSED` \| `ACCEPTANCE-PENDING <authority>`; `bead-accept.sh --review` — `CLOSED` \| `FAILED <cycles-left>` \| `HALTED [<reason>]` \| `INCOMPLETE` |
-| 9 (reopen) | `bead-reopen.sh` — `REOPENED` |
-| 13 | `bead-read.sh` — the array-indexed read |
-
-Rules 3, 8 and 10's note content are judgment and stay here in prose.
+Each rule above names its script at the point of action; `SKILL.md`'s Scripts table is the full
+list. Rules 3, 8 and 10's note content are judgment and stay here in prose.

@@ -70,11 +70,10 @@ only informs it.
 
 ## Create
 
-One call. It assembles the labels and metadata, always disables label inheritance under `--parent`
-(the parent's `accept:` and `tier:` are inherited otherwise, giving the child two acceptance
-authorities), derives `--spec-id` from `--governs`, writes the `workunit.yaml` backlink in the same
-action, appends the migration-log line when `--migrated-from` is present (contract part 4 §6.1), and
-checks its own result.
+One call. It assembles the labels and metadata, always disables label inheritance under `--parent`,
+derives `--spec-id` from `--governs`, writes the `workunit.yaml` backlink in the same action,
+appends the migration-log line when `--migrated-from` is present (contract part 4 §6.1), and checks
+its own result.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/create-bead.sh \
@@ -122,7 +121,6 @@ confirmation sentence. The caller reads one line.
 ## Never
 
 - Never claim, update, close, or work the Bead you created.
-- Never run `bd remember`, `bd edit`, or `bd sql`.
 - Never `bd init`. No `$BEADS_DIR` → return `REFUSED: T0 no $BEADS_DIR`.
 - Never create more than one Bead per brief.
 - Never pass `--force` to `create-bead.sh`.

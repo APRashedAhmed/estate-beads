@@ -8,6 +8,11 @@ Inline `scripts/create-bead.sh` is the default authoring path. Spawn the fresh
 `estate-beads:bead-author` subagent only for the exception case (below). Raw `bd create` is denied
 by the `PreToolUse` guard; it names these two scripts as the remedy.
 
+## Is this a Bead at all?
+
+Before the gate: it survives this session ending or a change of executor, and it is not a step
+inside work you already hold. A step goes in the session task list, not here.
+
 ## The gate (T1–T5)
 
 Run all five yourself before creating anything. Any fail: create nothing.
@@ -83,15 +88,11 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/create-bead.sh \
 
 It prints the Bead id, checks its own result, and writes the `workunit.yaml` backlink and (when
 `--migrated-from` is present) the migration-log line in the same action. On a second call for work
-it already created — keyed on `--key` first, else on an exact `--title` match — it prints
-`EXISTS: <id>` and creates nothing; treat that like success. Never pass `--force`; that judgment is
+it already created — keyed on `--key` first, then `--migrated-from`, else on an exact `--title`
+match — it prints `EXISTS: <id>` and creates nothing; treat that like success. Never pass `--force`; that judgment is
 never yours to make. `parent_id` on the created Bead reads null even under `--parent`; parentage is a
 `parent-child` entry inside `dependencies` — `check-bead.sh` reads there, and so should you if you
 verify it by hand.
-
-`bd delete` does not unwind a `create-bead.sh` call: the `workunit.yaml` `beads:` backlink and the
-migration-log line both survive it. Undoing a mis-created Bead means reverting those two writes by
-hand.
 
 ## Many Beads from one artifact
 
@@ -167,10 +168,11 @@ has no Bead, author its Bead before anything else.
 
 `bd` ignores cwd entirely — `$BEADS_DIR` is the only scoping lever. With the estate export active, a
 scratch `bd init` aborts ("Found existing Dolt database") and a later `bd create` writes straight to
-the **estate** database instead; cwd gives no protection. This happened: Bead `pa-7a5` was created and
-then deleted against the estate database on 2026-09-21 by a probe that meant to target a scratch one.
+the **estate** database instead; cwd gives no protection.
 
-Recipe for a real scratch database:
+Recipe for a real scratch database, run from a session whose cwd is outside any git repository —
+the guard judges the hook payload's cwd, not an in-command `cd`, so the `(cd "$scratch" && …)` form
+below is denied from any session whose cwd is inside a git repository, this worktree included:
 
 ```bash
 (cd "$scratch" && env -u BEADS_DIR bd init --skip-hooks --skip-agents --non-interactive --prefix t)
@@ -180,4 +182,5 @@ then `BEADS_DIR="$scratch/.beads" bd …` (or the equivalent flag on a script) f
 command. Never point `$BEADS_DIR` at the estate database from a probe. A `bd create`/`bd update` run
 in a non-git scratch directory also prints `warning: beads.role not configured (GH#2950)` on stderr —
 noise, not a finding; the estate database repo sets `beads.role=maintainer`, so it only appears
-against scratch databases.
+against scratch databases. Tests exercise this through `tests/_scratch_db.sh`, which runs from
+outside any git repository.

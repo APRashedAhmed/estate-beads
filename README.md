@@ -8,7 +8,8 @@ Beads work-tracking for the estate: create, claim, report, accept, release and g
 ## Components
 - **Skill** `skills/beads` — one routed skill (`estate-beads:beads`). Router in `SKILL.md`;
   `references/authoring.md` (create one Bead, or many from an artifact), `references/working.md`
-  (the thirteen rules), `references/review-brief.md` (the review-acceptance brief fragment).
+  (the thirteen rules), `references/review-brief.md` (the review-acceptance brief fragment),
+  `references/wayfinding-operations.md` (the `wayfinder` skill's tracker adapter).
 - **Agent** `agents/bead-author.md` (`estate-beads:bead-author`) — the exception-path Bead-authoring
   subagent; a fresh spawn, never a fork.
 - **Hooks** `hooks/hooks.json` — `scripts/eb-guard.py` (`PreToolUse(Bash)`), `scripts/eb-session-start.sh`,
@@ -55,9 +56,9 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
 
 | Obligation (seam) | Claude Code | Codex CLI | Verdict class | Failure class | Fixture |
 | --- | --- | --- | --- | --- | --- |
-| skills | TODO | TODO | TODO | TODO | TODO — portability-contract.md §12 (U4) |
+| skills | Present — `skills/beads/SKILL.md` + `references/*.md`; frontmatter carries only `name` and `description`, the vendor-neutral minimum (§12) | Present — plugin-shipped `skills/` works on both harnesses unmodified (§12). `SKILL.md`'s description is 344 characters, over the ~250-character workspace guideline (design rule 5); a long description risks being shortened or the skill omitted from Codex's capped listing — not fixed this unit | n/a — not a runtime-governed seam | n/a | `scripts/check-views.sh` (no generated view for skills; nothing asserts description length) |
 | catalog entry | TODO | TODO | TODO | TODO | TODO — portability-contract.md §13 (U7) |
-| agent delivery | TODO | TODO | TODO | TODO | TODO — portability-contract.md §11 (U4/U7), Codex ships no plugin-level subagents; delivery is by lifecycle deposit to `~/.codex/agents/` |
+| agent delivery | Present — `agents/bead-author.md` is canonical, resolves to `estate-beads:bead-author` | Present, by lifecycle deposit (§11): `scripts/gen-agents.py` renders `agents/bead-author.md` to the committed `adapters/codex/agents/eb-bead-author.toml`; `scripts/install.sh` deposits it to `${CODEX_HOME:-$HOME/.codex}/agents/eb-bead-author.toml` and `scripts/uninstall.sh` removes it | n/a — not a runtime-governed seam | n/a | `scripts/check-views.sh` (drift between `agents/bead-author.md` and the generated TOML) |
 | `session_opened` (`SessionStart` → `bd prime` + `BEADS_ACTOR` export + advisory crash sweep) | Observe (records/exports; rejects nothing) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | advisory | fail-open | `tests/eb-session.test.sh` |
 | `before_mutation` (`PreToolUse(Bash)` → `scripts/eb-guard.py`, the `bd` verb guard) | Prevent (governed seam, fails closed on a recognized `bd` invocation the tokenizer cannot parse) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | governed | deny | `tests/eb-guard.test.sh`, `tests/fixtures/guard/*.json` |
 | `SessionEnd` (release this session's claims) — **no seam in the seven-seam vocabulary**; not amended (design §12.8) | Observe (acts deterministically on this session's own claims; rejects nothing — the least-wrong of the six §3 values for a non-rejecting seam) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | advisory | fail-open | `tests/eb-session.test.sh` |
@@ -114,7 +115,7 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
   be misread as the id. The failure direction is safe (an unresolvable/wrong id makes `bd show`
   fail, which fails closed to deny), never a false allow.
 
-## Skill and agent design notes
+## Skill and agent design
 
 Rationale for the shape of `skills/beads` and `agents/bead-author.md`. Not loaded at runtime.
 Domain law is contract part 1 §5–§9, §13
@@ -163,7 +164,12 @@ are reference. No contents sections, no summaries, per skill-authoring concern 3
 
 **Pitfalls stay at the point of action** (concern 1): the scratch-database recipe and the
 `beads.role` warning note sit in `references/authoring.md` beside the commands they concern; the
-`notes` `E2BIG` cap sits in `references/working.md` rule 5, beside `bead-progress.sh`.
+`notes` `E2BIG` cap sits in `references/working.md` rule 5, beside `bead-progress.sh`. This happened:
+Bead `pa-7a5` was created and then deleted against the estate database on 2026-09-21, by a probe
+that meant to target a scratch database but relied on cwd for isolation — `bd` ignores cwd
+entirely, so a scratch `bd init` aborted and the following `bd create` wrote straight to the estate
+database instead. `references/authoring.md`'s scratch-database recipe (`$BEADS_DIR` as the only
+scoping lever) is the operative rule that survives; this paragraph is the incident it answers.
 
 ## Install / Update / Uninstall
 - **Install:** `bash scripts/install.sh` (idempotent; non-interactive with `--yes`).

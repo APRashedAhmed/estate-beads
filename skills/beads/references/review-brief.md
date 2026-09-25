@@ -14,15 +14,19 @@ This review accepts or rejects Bead `<bead-id>` against its acceptance condition
 
 > <acceptance condition, quoted>
 
-End your report with this frontmatter block, filled in exactly:
+Begin your report with this frontmatter block, as the file's first lines, fenced by `---` lines
+exactly as `scripts/lib/frontmatter.py` parses (it reads only a leading fence — line 1 must be
+`---`):
 
-```yaml
+```
+---
 bead: <bead-id>
 verdict: PASS | FAIL | INCOMPLETE
 reviewer: { model: <haiku|sonnet|opus|fable>, effort: <level> }
 spawn: fresh
-prior: <path to the report this one supersedes, on a re-review only>
+prior: null   # a path to the report this one supersedes, on a re-review only
 reason: coverage | reshape | bounds-not-set   # INCOMPLETE only, optional
+---
 ```
 
 - **PASS** = no BLOCKER and no MAJOR finding.
