@@ -10,8 +10,8 @@ by the `PreToolUse` guard; it names these two scripts as the remedy.
 
 ## Is this a Bead at all?
 
-Before the gate: it survives this session ending or a change of executor, and it is not a step
-inside work you already hold. A step goes in the session task list, not here.
+Before the gate: the work survives this session ending or a change of executor, and it is not a
+step inside work you already hold. A step goes in the session task list, not here.
 
 ## The gate (T1–T5)
 

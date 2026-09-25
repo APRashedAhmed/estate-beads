@@ -14,9 +14,8 @@ This review accepts or rejects Bead `<bead-id>` against its acceptance condition
 
 > <acceptance condition, quoted>
 
-Begin your report with this frontmatter block, as the file's first lines, fenced by `---` lines
-exactly as `scripts/lib/frontmatter.py` parses (it reads only a leading fence — line 1 must be
-`---`):
+Put this frontmatter block at the top of the report, fenced by `---` lines exactly as
+`scripts/lib/frontmatter.py` parses (it reads only a leading fence — line 1 must be `---`):
 
 ```
 ---
