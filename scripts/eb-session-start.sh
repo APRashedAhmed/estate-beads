@@ -6,8 +6,11 @@
 #    session id. Independent of whether a Beads database is present.
 # 2. `bd prime --hook-json` + an ADVISORY crash-claim sweep, only when $BEADS_DIR resolves to an
 #    existing directory — silent (no stdout) otherwise. The sweep never releases anything; it
-#    only lists Beads claimed by a session whose transcript file is gone, naming
-#    scripts/bead-release.sh as the mechanism an operator/orchestrator runs.
+#    lists Beads claimed by a session whose transcript is MISSING, or present but older than
+#    ${EB_SESSION_START_SWEEP_STALE_HOURS:-6}h (M3, fix round 1 review pa-s2s.8-review-1 — a
+#    transcript persists long after its session ends, so presence alone is not a liveness
+#    signal), under ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/, naming scripts/bead-release.sh
+#    as the mechanism an operator/orchestrator runs.
 #
 # Both `bd prime --hook-json` and this hook's own output are the SAME SessionStart JSON envelope
 # (`{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext": "..."}}`) — the
@@ -45,13 +48,26 @@ LIST_JSON="$(bd list --status in_progress --json 2>/dev/null)"
 
 RELEASE_SCRIPT="$HERE/bead-release.sh"
 
-python3 - "$PRIME_JSON" "$RELEASE_SCRIPT" "$SESSION_ID" "$HOME" "$LIST_JSON" <<'PYEOF'
+# M3 (review pa-s2s.8-review-1): the sweep must honour ${CLAUDE_CONFIG_DIR:-$HOME/.claude} for
+# the transcript root, not a hardcoded $HOME/.claude — under this estate's per-account config
+# directories, the hardcoded path would flag every live session of another account as crashed.
+CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+# Liveness threshold: a transcript MISSING or older than this many hours reads as crashed
+# (design §11.2 "catches crashes"). A present-but-days-old transcript is exactly the case the
+# prior "missing only" check could not detect (transcripts persist ~30 days after a session
+# ends, so presence alone is not a liveness signal).
+STALE_HOURS="${EB_SESSION_START_SWEEP_STALE_HOURS:-6}"
+
+python3 - "$PRIME_JSON" "$RELEASE_SCRIPT" "$SESSION_ID" "$CONFIG_DIR" "$LIST_JSON" "$STALE_HOURS" <<'PYEOF'
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
-prime_raw, release_script, own_session_id, home, list_raw = sys.argv[1:6]
+prime_raw, release_script, own_session_id, config_dir, list_raw, stale_hours_raw = sys.argv[1:7]
+stale_seconds = float(stale_hours_raw) * 3600.0
+now = time.time()
 
 try:
     prime = json.loads(prime_raw)
@@ -83,14 +99,21 @@ for issue in issues:
         # This session's own claims are not "dead" — and at `startup` this session's own
         # transcript file may not exist yet regardless.
         continue
-    transcripts = list(Path(home).glob(f".claude/projects/*/{sid}.jsonl"))
+    transcripts = list(Path(config_dir).glob(f"projects/*/{sid}.jsonl"))
     if transcripts:
-        continue  # a live transcript exists: not a crash, nothing to flag
+        # M3: presence alone is not a liveness signal — a transcript persists long after its
+        # session ends (measured: ~4300 transcripts on disk at review time, spanning ~30 days).
+        # Only a RECENTLY-touched transcript reads as live; an old one is a crash too.
+        newest_mtime = max(t.stat().st_mtime for t in transcripts)
+        if (now - newest_mtime) < stale_seconds:
+            continue  # a recently-live transcript exists: not a crash, nothing to flag
+        reason = f"transcript at {transcripts[0]} is stale (>{stale_hours_raw}h old)"
+    else:
+        reason = f"no transcript found at {config_dir}/projects/*/{sid}.jsonl"
     advisories.append(
-        f"- {issue.get('id')} is claimed by session {sid} (no transcript found at "
-        f"~/.claude/projects/*/{sid}.jsonl) — looks crashed. Advisory only: run "
-        f"`{release_script} --id {issue.get('id')} --note '<why>'` to release it; this hook "
-        f"never releases automatically."
+        f"- {issue.get('id')} is claimed by session {sid} ({reason}) — looks crashed. Advisory "
+        f"only: run `{release_script} --id {issue.get('id')} --note '<why>'` to release it; "
+        f"this hook never releases automatically."
     )
 
 out = prime

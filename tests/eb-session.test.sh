@@ -16,6 +16,11 @@ source "$ROOT/tests/_scratch_db.sh"
 sessionstart_payload() {  # <session-id>
   printf '{"session_id":"%s","source":"startup","hook_event_name":"SessionStart"}' "$1"
 }
+
+# M3 (review pa-s2s.8-review-1): pin the transcript root this test's scratch HOME actually uses —
+# an inherited CLAUDE_CONFIG_DIR (this estate is per-account keyed) would make every fixture
+# transcript this suite writes under $HOME/.claude invisible to the sweep.
+unset CLAUDE_CONFIG_DIR
 sessionend_payload() {  # <session-id>
   printf '{"session_id":"%s","hook_event_name":"SessionEnd"}' "$1"
 }
@@ -96,6 +101,37 @@ STATUS_DEAD_AFTER="$(bd show --json "$BEAD3_ID" | python3 -c 'import json,sys; p
 assert_eq "sweep: dead claim's Bead stays in_progress (advisory only, never released)" \
   "in_progress" "$STATUS_DEAD_AFTER"
 rm -f "$ENVFILE2"
+
+# --- 4b. M3 (review pa-s2s.8-review-1): a PRESENT but STALE transcript (mtime older than the
+#         threshold) reads as crashed too, not just a missing one -----------------------------
+SID_STALE="eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+BEAD3B_JSON="$(BEADS_ACTOR=creator bd create "stale transcript sweep test" --type task -p 2 --json)"
+BEAD3B_ID="$(printf '%s' "$BEAD3B_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+BEADS_ACTOR="$SID_STALE" bd update "$BEAD3B_ID" --claim --json >/dev/null
+mkdir -p "$HOME/.claude/projects/fake-project"
+: > "$HOME/.claude/projects/fake-project/$SID_STALE.jsonl"
+touch -d '-7 hours' "$HOME/.claude/projects/fake-project/$SID_STALE.jsonl"
+
+ENVFILE2B="$(mktemp)"
+OUT2B="$(CLAUDE_ENV_FILE="$ENVFILE2B" bash "$START" <<<"$(sessionstart_payload "$SID_SWEEPER")")"
+assert_contains "sweep: flags a present-but-stale-transcript claim" "$OUT2B" "$BEAD3B_ID"
+assert_contains "sweep: names the transcript as stale, not just missing" "$OUT2B" "stale"
+STATUS_STALE_AFTER="$(bd show --json "$BEAD3B_ID" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["status"])')"
+assert_eq "sweep: stale-transcript claim's Bead stays in_progress (advisory only)" \
+  "in_progress" "$STATUS_STALE_AFTER"
+
+# A FRESH transcript (default threshold, well under 6h) must NOT be flagged.
+: > "$HOME/.claude/projects/fake-project/$SID_LIVE.jsonl"
+ENVFILE2C="$(mktemp)"
+OUT2C="$(CLAUDE_ENV_FILE="$ENVFILE2C" bash "$START" <<<"$(sessionstart_payload "$SID_SWEEPER")")"
+python3 - "$OUT2C" "$BEAD4_ID" <<'PYEOF'
+import sys
+out, live_id = sys.argv[1:3]
+assert live_id not in out, f"{live_id} should NOT appear in sweep advisories: {out}"
+PYEOF
+[ $? -eq 0 ] && eb_ok "sweep: a fresh-mtime transcript stays live (not flagged as stale)" \
+             || eb_bad "sweep: a fresh-mtime transcript stays live (not flagged as stale)"
+rm -f "$ENVFILE2B" "$ENVFILE2C"
 
 # --- 5. SessionEnd timing: one direct stdin feed with one claimed Bead completes < 1s ----------
 BEAD5_JSON="$(BEADS_ACTOR=creator bd create "timing test" --type task -p 2 --json)"
