@@ -18,7 +18,8 @@ eb_expand_seat_root() {
 # behaves differently across versions.
 eb_metadata_merge() {  # <id> <json-fragment>
   local id="$1" frag="$2" existing merged
-  existing="$(bd show --json "$id" 2>/dev/null | jq -c '.[0].metadata // {}')" || existing='{}'
+  existing="$(bd show --json "$id" 2>/dev/null | jq -c '.[0].metadata // {}')" \
+    || { printf 'eb-common: bd show --json failed for %s; refusing to merge metadata (would drop existing keys)\n' "$id" >&2; return 1; }
   [[ -n "$existing" && "$existing" != "null" ]] || existing='{}'
   merged="$(jq -nc --argjson a "$existing" --argjson b "$frag" '$a * $b')" \
     || { printf 'eb-common: metadata merge failed to build JSON for %s\n' "$id" >&2; return 1; }
