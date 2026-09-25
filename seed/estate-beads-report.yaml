@@ -34,7 +34,7 @@ kind: shell
 # path to itself already in hand, which is exactly what this line is
 # bootstrapping from a totally external shell (the operator's live session),
 # so it cannot be the bootstrap step here.
-run: "P=$(jq -r '.plugins[\"estate-beads@homelab-plugins\"].installPath // empty' ~/.claude/plugins/installed_plugins.json 2>/dev/null); [ -n \"$P\" ] || P=\"${SEAT_ROOT:-$HOME/heliopolis}/engineering/agentic/plugins/estate-beads\"; bash \"$P/scripts/eb-closeout-report.sh\" \"${CKPT_HANDOFF_PATH:-}\""
+run: "P=$(jq -r '(.plugins[\"estate-beads@homelab-plugins\"] // empty) | (if type==\"array\" then .[-1] else . end).installPath // empty' ~/.claude/plugins/installed_plugins.json 2>/dev/null); [ -n \"$P\" ] || P=\"${SEAT_ROOT:-$HOME/heliopolis}/engineering/agentic/plugins/estate-beads\"; bash \"$P/scripts/eb-closeout-report.sh\" \"${CKPT_HANDOFF_PATH:-}\""
 order: 40
 # on: closeout only — this participant reports Beads at the end of a
 # work-unit, never on an ordinary mid-session checkpoint refresh.
