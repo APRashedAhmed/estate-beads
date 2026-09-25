@@ -58,4 +58,21 @@ out="$(scripts/bead-accept.sh --id "$blocked" --evidence "$scratch/blocked.txt")
 assert_eq "closes once the blocker is closed" "CLOSED" "$out"
 assert_rc "exits 0 once unblocked" 0 "$rc"
 
+# --- M1 (review pa-s2s.8-review-1): close from a DIFFERENT actor than the claimant ----------------
+export BEADS_ACTOR=claimant-actor
+id="$(scripts/create-bead.sh --title "CrossActor" --description d --acceptance a --project p --accept evidence --recognized-by x)"
+scripts/bead-claim.sh --id "$id" --model sonnet >/dev/null
+bd update "$id" --append-notes "EVIDENCE: initial report" >/dev/null
+bd update "$id" --add-label "acceptance-pending" >/dev/null
+export BEADS_ACTOR=closer-actor
+out="$(scripts/bead-accept.sh --id "$id" --evidence "$scratch/cross-actor.txt")"; rc=$?
+export BEADS_ACTOR=actor1
+assert_eq "closes as a different actor than the claimant" "CLOSED" "$out"
+assert_rc "exits 0 as a different actor" 0 "$rc"
+bead="$(bd show --json "$id" 2>/dev/null | jq -c '.[0]')"
+assert_eq "status is closed (cross-actor)" "closed" "$(printf '%s' "$bead" | jq -r '.status')"
+assert_eq "assignee stays the original claimant (audit trail: who did the work)" \
+  "claimant-actor" "$(printf '%s' "$bead" | jq -r '.assignee')"
+assert_contains "notes record who closed it" "$(printf '%s' "$bead" | jq -r '.notes')" "closed by closer-actor"
+
 eb_report

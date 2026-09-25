@@ -26,7 +26,7 @@ assert_rc "eb-closeout-report exits 0 on two accept:evidence/operator beads" 0 "
 n_lines="$(printf '%s\n' "$out" | wc -l)"
 assert_eq "one report line per Bead named in beads:" "2" "$n_lines"
 assert_contains "reports the accept:evidence Bead CLOSED" "$out" "$a: CLOSED"
-assert_contains "reports the accept:operator Bead ACCEPTANCE-PENDING" "$out" "$b: ACCEPTANCE-PENDING the operator"
+assert_contains "reports the accept:operator Bead ACCEPTANCE-PENDING" "$out" "$b: ACCEPTANCE-PENDING operator"
 
 a_evidence="$(bd show --json "$a" 2>/dev/null | jq -r '.[0].notes // ""')"
 assert_contains "Bead A's evidence cites the archived handoff path" "$a_evidence" "archived handoff: $handoff"

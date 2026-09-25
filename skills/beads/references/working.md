@@ -53,7 +53,12 @@ only what survives as judgment; the guard's own deny message carries the rest.
    label — it is the authority closing, never you:
 
    - `accept:evidence` → closes now, prints `CLOSED`.
-   - `accept:operator` → prints `ACCEPTANCE-PENDING operator` and stops; the operator closes.
+   - `accept:operator` → prints `ACCEPTANCE-PENDING operator` and stops. On the operator's
+     say-so in chat (design §11.6), the agent — in that later session, since the ruling always
+     arrives after this one ends — runs
+     `scripts/bead-accept.sh --id <id> --evidence '<the operator's message, cited>'`, which
+     prints `CLOSED`. This is the SAME `--id --evidence` form `accept:evidence` uses; the
+     evidence cited is the operator's own words, not a file.
    - `accept:independent` → prints `ACCEPTANCE-PENDING review`. Spawn a fresh auditor one tier above
      your `executor.model` (same tier only when you are `fable`, the top of the ladder; never a
      fork — a forked reviewer shares the very context the review exists to check), with
@@ -65,6 +70,12 @@ only what survives as judgment; the guard's own deny message carries the rest.
        the budget; resume from that `NEXT:`. At zero cycles the closer instead prints `HALTED`.
      - `HALTED [<reason>]` — stop; the `halt:*` label already returns the Bead to the operator.
      - `INCOMPLETE` — the Bead is unchanged and no cycle was spent; re-brief the reviewer.
+     - `BLOCKED-BY <ids>` (exit 1) — the Bead has open blockers; nothing was changed. Re-run the
+       closer once they close.
+
+   Either closer form may run from a session other than the one that claimed the Bead — the
+   claiming session's session id stays the recorded `assignee` (the audit trail of who did the
+   work); the closer's own actor is recorded in a `closed by <actor>` note line when it differs.
 
    A later FAIL review citing the closing PASS report reopens a closed Bead through
    `scripts/bead-reopen.sh --review <report>`, which prints `REOPENED`.

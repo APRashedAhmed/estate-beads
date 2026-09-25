@@ -28,7 +28,7 @@ you and is the read path to prefer.
 | Creating several Beads from one governing artifact | `references/authoring.md` (batch section) |
 | Holding a Bead and working it — claim, checkpoint, hand off, release, report success | `references/working.md` |
 | A Bead you reported is `ACCEPTANCE-PENDING review` | `references/working.md` rule 9, and append `references/review-brief.md` to the auditor brief |
-| Reopening a closed Bead on a later FAIL review | `references/working.md`, Reopen |
+| Reopening a closed Bead on a later FAIL review | `references/working.md` rule 9 |
 
 ## Scripts
 
@@ -45,8 +45,8 @@ failure names what broke and the exact remedy.
 | `bead-claim.sh --id <id> [--model <haiku\|sonnet\|opus\|fable>]` | claim with the exit-code branch absorbed and `executor.model` recorded. Prints `CLAIMED` or `LOST` |
 | `bead-progress.sh` | the rule-5 progress block, rewritten in place |
 | `bead-report-success.sh` | rule 9 — evidence, `acceptance-pending`, and a close only under `accept:evidence`. Prints `CLOSED` or `ACCEPTANCE-PENDING <authority>` |
-| `bead-accept.sh --id <id> --evidence <path>` | closes an `accept:evidence` Bead already `acceptance-pending` on cited evidence. Prints `CLOSED` |
-| `bead-accept.sh --review <report>` | the closer for a review verdict. Prints `CLOSED \| ACCEPTANCE-PENDING <authority> \| FAILED <cycles-left> \| HALTED [<reason>] \| INCOMPLETE` |
+| `bead-accept.sh --id <id> --evidence <path>` | closes a Bead already `acceptance-pending` on cited evidence — an `accept:evidence` Bead reclaimed off-script, or an `accept:operator` Bead on the operator's say-so in chat (cite the message, not a file). Prints `CLOSED` |
+| `bead-accept.sh --review <report>` | the closer for a review verdict. Prints `CLOSED \| ACCEPTANCE-PENDING <authority> \| FAILED <cycles-left> \| HALTED [<reason>] \| INCOMPLETE \| BLOCKED-BY <ids>` (exit 1, nothing changed) |
 | `bead-release.sh --id <id> --note <why>` | release a claim: return to open, unassign, record the note. Prints `RELEASED` |
 | `bead-reopen.sh --review <report>` | reopen a closed Bead on a later FAIL review citing the closing PASS report. Prints `REOPENED` |
 

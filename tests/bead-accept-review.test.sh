@@ -193,4 +193,22 @@ out="$(scripts/bead-accept.sh --review "$r")"; rc=$?
 assert_eq "closes once the blocker is closed (review)" "CLOSED" "$out"
 assert_rc "exits 0 once unblocked (review)" 0 "$rc"
 
+# --- M1 (review pa-s2s.8-review-1): close from a DIFFERENT actor than the claimant, both
+#     accept: modes that close through the --review form -------------------------------------
+for mode in evidence independent; do
+  export BEADS_ACTOR=claimant-actor
+  id="$(report_pending "CrossActor-$mode" "$mode" sonnet)"
+  r="$REPORTS/cross-actor-$mode.md"; eb_write_review "$r" "$id" PASS opus fresh ""
+  export BEADS_ACTOR=closer-actor
+  out="$(scripts/bead-accept.sh --review "$r")"; rc=$?
+  assert_eq "closes as a different actor than the claimant ($mode)" "CLOSED" "$out"
+  assert_rc "exits 0 as a different actor ($mode)" 0 "$rc"
+  bead="$(bd show --json "$id" 2>/dev/null | jq -c '.[0]')"
+  assert_eq "status is closed (cross-actor, $mode)" "closed" "$(printf '%s' "$bead" | jq -r '.status')"
+  assert_eq "assignee stays the original claimant ($mode)" \
+    "claimant-actor" "$(printf '%s' "$bead" | jq -r '.assignee')"
+  assert_contains "notes record who closed it ($mode)" "$(printf '%s' "$bead" | jq -r '.notes')" "closed by closer-actor"
+done
+export BEADS_ACTOR=actor1
+
 eb_report

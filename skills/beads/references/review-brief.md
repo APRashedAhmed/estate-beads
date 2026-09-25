@@ -14,6 +14,10 @@ This review accepts or rejects Bead `<bead-id>` against its acceptance condition
 
 > <acceptance condition, quoted>
 
+**Executor model:** `<haiku|sonnet|opus|fable>` — the caller states this; it is the Bead's
+`metadata.executor.model`, the value your tier must outrank (see below). The closer re-checks it
+against the live Bead independently; this line lets you check it too before you write a verdict.
+
 Put this frontmatter block at the top of the report, fenced by `---` lines exactly as
 `scripts/lib/frontmatter.py` parses (it reads only a leading fence — line 1 must be `---`):
 
@@ -23,7 +27,7 @@ bead: <bead-id>
 verdict: PASS | FAIL | INCOMPLETE
 reviewer: { model: <haiku|sonnet|opus|fable>, effort: <level> }
 spawn: fresh
-prior: null   # a path to the report this one supersedes, on a re-review only
+prior: null   # an ABSOLUTE path to the report this one supersedes, on a re-review only
 reason: coverage | reshape | bounds-not-set   # INCOMPLETE only, optional
 ---
 ```
@@ -32,8 +36,9 @@ reason: coverage | reshape | bounds-not-set   # INCOMPLETE only, optional
 - **Tier rule**: you must outrank the Bead's `executor.model` on the ladder
   haiku < sonnet < opus < fable (same tier only at fable). The closer refuses a reviewer that does
   not.
-- **Re-review**: set `prior` to the report you are superseding; the closer chains the evidence
-  through it.
+- **Re-review**: set `prior` to the report you are superseding, as an **absolute path** — the
+  closer resolves and records its own `--review <report>` path with `realpath` before writing it
+  anywhere, and a later reopen string-compares `prior` against that recorded value.
 - Write the report to `reviews/<bead-id>-review-<n>.md` under the governing work unit.
 
 The caller runs the closer on your report (`scripts/bead-accept.sh --review <report>`); you never

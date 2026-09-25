@@ -21,6 +21,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$review" ]] || die "missing required --review <report-path>."
 [[ -f "$review" ]] || die "no report at '$review'. Confirm the path, then re-run."
+review="$(realpath "$review")"
 command -v jq >/dev/null || die "jq not on PATH. Install jq, then re-run."
 
 fm="$(eb_read_frontmatter "$SCRIPT_DIR/lib" "$review")" \
@@ -36,6 +37,11 @@ r_prior="$(printf '%s' "$fm" | jq -r '.prior // empty')"
 [[ "$r_verdict" == "FAIL" ]] || die "'$review' verdict must be FAIL to reopen a closed Bead (got '${r_verdict:-<unset>}'). A PASS never reopens."
 [[ "$r_spawn" == "fresh" ]] || die "'$review' is not attested 'spawn: fresh' (got '${r_spawn:-<unset>}'). A forked reviewer is refused; re-run with a fresh spawn."
 [[ -n "$r_prior" && "$r_prior" != "null" ]] || die "'$review' has no 'prior' — reopen requires the report citing the closing PASS report."
+# m10 (review pa-s2s.8-review-1): bead-accept.sh now records `close_reason` as an ABSOLUTE path
+# (realpath'd there). Normalize `prior` the same way before the string compare below, so a
+# relative `prior` written by an author who did not yet follow review-brief.md's "prior is
+# absolute" rule still matches. Guarded by -f: only normalize an existing file.
+[[ -f "$r_prior" ]] && r_prior="$(realpath "$r_prior")"
 
 raw="$(bd show --json "$r_bead" 2>/dev/null)" || die "'bd show --json $r_bead' failed. Confirm the id in '$review' frontmatter, then re-run."
 bead="$(printf '%s' "$raw" | jq '.[0]')"
@@ -65,10 +71,12 @@ fi
 bd reopen "$r_bead" --reason "reopened per FAIL review $review, prior $r_prior" >/dev/null \
   || die "'bd reopen $r_bead' failed. Fix the reported cause, then re-run; nothing else was changed."
 
-"$SCRIPT_DIR/bead-progress.sh" --id "$r_bead" \
-  --completed "(none)" \
+# m1 (review pa-s2s.8-review-1): --preserve keeps the existing COMPLETED line and any other
+# surviving line (notably EVIDENCE:) verbatim; a bare --completed "(none)" call (no --preserve)
+# clobbered them on every reopen, dropping the acceptance trail the closer had just written.
+"$SCRIPT_DIR/bead-progress.sh" --id "$r_bead" --preserve \
   --in-progress "reopened on a FAIL review" \
   --next "$review" \
-  || die "the Bead was reopened but the rule-5 NEXT rewrite failed. Run: $SCRIPT_DIR/bead-progress.sh --id $r_bead --next '$review'"
+  || die "the Bead was reopened but the rule-5 NEXT rewrite failed. Run: $SCRIPT_DIR/bead-progress.sh --id $r_bead --preserve --next '$review'"
 
 printf 'REOPENED\n'

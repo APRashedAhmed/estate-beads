@@ -19,7 +19,7 @@ assert_eq "accept:evidence still closes on its own report" "CLOSED" "$out"
 op="$(scripts/create-bead.sh --title "Operator" --description d --acceptance a --project p --accept operator --recognized-by x)"
 scripts/bead-claim.sh --id "$op" --model sonnet >/dev/null
 out="$(scripts/bead-report-success.sh --id "$op" --evidence "tests pass")"
-assert_eq "accept:operator's message is unchanged" "ACCEPTANCE-PENDING the operator" "$out"
+assert_eq "accept:operator's message matches the contract token" "ACCEPTANCE-PENDING operator" "$out"
 
 ind="$(scripts/create-bead.sh --title "Independent" --description d --acceptance a --project p --accept independent --recognized-by x)"
 scripts/bead-claim.sh --id "$ind" --model sonnet >/dev/null
