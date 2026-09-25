@@ -152,4 +152,23 @@ notes="$(bd show --json "$id" 2>/dev/null | jq -r '.[0].notes')"
 assert_contains "evidence lists the prior report" "$notes" "$r1"
 assert_contains "evidence lists the closing report" "$notes" "$r2"
 
+# --- atomic close: an open blocker refuses a PASS before any mutation ------------------------------
+blocker="$(scripts/create-bead.sh --title "RevBlocker" --description d --acceptance a --project p --accept evidence --recognized-by x)"
+blocked="$(report_pending "RevBlocked" independent sonnet)"
+bd dep "$blocker" --blocks "$blocked" >/dev/null
+before_bead="$(bd show --json "$blocked" 2>/dev/null | jq -c '.[0]')"
+r="$REPORTS/blocked.md"; eb_write_review "$r" "$blocked" PASS opus fresh ""
+out="$(scripts/bead-accept.sh --review "$r")"; rc=$?
+assert_eq "open blocker prints BLOCKED-BY on a PASS review" "BLOCKED-BY $blocker" "$out"
+assert_rc "open blocker exits 1 on a PASS review" 1 "$rc"
+after_bead="$(bd show --json "$blocked" 2>/dev/null | jq -c '.[0]')"
+assert_eq "label/status/notes unchanged when blocked (review)" \
+  "$(printf '%s' "$before_bead" | jq -c '{status, labels, notes}')" \
+  "$(printf '%s' "$after_bead" | jq -c '{status, labels, notes}')"
+
+bd close "$blocker" --reason "unblock" >/dev/null
+out="$(scripts/bead-accept.sh --review "$r")"; rc=$?
+assert_eq "closes once the blocker is closed (review)" "CLOSED" "$out"
+assert_rc "exits 0 once unblocked (review)" 0 "$rc"
+
 eb_report
