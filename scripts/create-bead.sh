@@ -13,6 +13,9 @@ SELF="create-bead"
 
 die() { printf '%s: %s\n' "$SELF" "$1" >&2; exit "${2:-1}"; }
 
+# shellcheck source=lib/eb-common.sh
+source "$SCRIPT_DIR/lib/eb-common.sh"
+
 title=""; btype="task"; description=""; acceptance=""
 project=""; accept=""; recognized_by=""
 tier=""; effort=""; workunit=""; governs=""; packet=""
@@ -20,6 +23,7 @@ parent=""; deps=""; by=""
 migration_log="${SEAT_ROOT:-$HOME/heliopolis}/PerAnkh/projects/permaat/workunits/2026-09-17-beads-state-sovereignty/migration-log.md"
 migrated_from=()
 force=0
+key=""; extra_labels=(); class=""; budget=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -41,7 +45,11 @@ while [[ $# -gt 0 ]]; do
     --migration-log)  migration_log="${2-}"; shift 2 ;;
     --by)             by="${2-}"; shift 2 ;;
     --force)          force=1; shift ;;
-    *) die "unknown flag '$1'. Flags: --title --type --description --acceptance --project --accept --recognized-by [--tier --effort --workunit --governs --packet --parent --deps --migrated-from --migration-log --by --force]" ;;
+    --key)            key="${2-}"; shift 2 ;;
+    --label)          extra_labels+=("${2-}"); shift 2 ;;
+    --class)          class="${2-}"; shift 2 ;;
+    --budget)         budget="${2-}"; shift 2 ;;
+    *) die "unknown flag '$1'. Flags: --title --type --description --acceptance --project --accept --recognized-by [--tier --effort --workunit --governs --packet --parent --deps --migrated-from --migration-log --by --force --key --label --class --budget]" ;;
   esac
 done
 
@@ -55,6 +63,23 @@ command -v jq >/dev/null || die "jq not on PATH. Install jq, then re-run."
 case "$accept" in evidence|independent|operator) ;; *) die "--accept must be evidence|independent|operator (got '$accept')." ;; esac
 if [[ -n "$tier" ]]; then
   case "$tier" in fable|opus|sonnet) ;; *) die "--tier must be fable|opus|sonnet (got '$tier')." ;; esac
+fi
+if [[ -n "$class" ]]; then
+  case "$class" in bounded-increment|hardened) ;; *) die "--class must be bounded-increment|hardened (got '$class')." ;; esac
+else
+  class="bounded-increment"
+fi
+# --budget cycles=<n>[,dim=<n>...], each value a non-negative integer (design §11.7).
+budget_json='{"cycles":2}'
+if [[ -n "$budget" ]]; then
+  budget_json='{}'
+  IFS=',' read -r -a __b_pairs <<<"$budget"
+  for pair in "${__b_pairs[@]}"; do
+    dim="${pair%%=*}"; val="${pair#*=}"
+    [[ -n "$dim" && "$dim" != "$pair" ]] || die "--budget entry '$pair' is not 'dim=<n>'."
+    [[ "$val" =~ ^[0-9]+$ ]] || die "--budget '$dim' must be a non-negative integer (got '$val')."
+    budget_json="$(jq -nc --argjson b "$budget_json" --arg d "$dim" --argjson v "$val" '$b + {($d): $v}')"
+  done
 fi
 if [[ "$deps" == *"external:"* ]]; then
   die "--deps carries an 'external:' edge; the estate does not use them. Drop it and re-run."
@@ -81,13 +106,19 @@ if [[ "$force" -ne 1 ]]; then
   existing_id=""
   list_json="$(bd list --json --status open,in_progress,blocked --limit 0 2>/dev/null)" \
     || die "'bd list --json' failed while running the idempotency guard. Fix the reported cause, then re-run; no Bead was created."
-  if [[ ${#migrated_from[@]} -gt 0 ]]; then
+  # --key is the first idempotency match (decision 11/design §12.2); falls back to
+  # --migrated-from, then the exact --title match, in that order.
+  if [[ -n "$key" ]]; then
+    existing_id="$(printf '%s' "$list_json" | jq -r --arg k "$key" 'map(select(.metadata.key == $k)) | .[0].id // empty')"
+  fi
+  if [[ -z "$existing_id" && ${#migrated_from[@]} -gt 0 ]]; then
     for mf in "${migrated_from[@]}"; do
       existing_id="$(printf '%s' "$list_json" | jq -r --arg mf "$mf" '
         map(select((.metadata["migrated-from"] // []) | index($mf) != null)) | .[0].id // empty')"
       [[ -n "$existing_id" ]] && break
     done
-  else
+  fi
+  if [[ -z "$existing_id" && -z "$key" && ${#migrated_from[@]} -eq 0 ]]; then
     existing_id="$(printf '%s' "$list_json" | jq -r --arg t "$title" 'map(select(.title == $t)) | .[0].id // empty')"
   fi
   if [[ -n "$existing_id" ]]; then
@@ -96,10 +127,12 @@ if [[ "$force" -ne 1 ]]; then
   fi
 fi
 
-# Labels: exactly one project:, exactly one accept:, at most one tier:/effort:.
-labels="project:${project},accept:${accept}"
+# Labels: exactly one project:, exactly one accept:, at most one tier:/effort:, exactly one
+# class: (default bounded-increment). --label is repeatable and additive.
+labels="project:${project},accept:${accept},class:${class}"
 [[ -n "$tier"   ]] && labels="${labels},tier:${tier}"
 [[ -n "$effort" ]] && labels="${labels},effort:${effort}"
+for l in "${extra_labels[@]}"; do labels="${labels},${l}"; done
 
 # Metadata: hyphenated keys go only through --metadata JSON (--set-metadata rejects them).
 mf_json='[]'
@@ -107,12 +140,13 @@ if [[ ${#migrated_from[@]} -gt 0 ]]; then
   mf_json="$(printf '%s\n' "${migrated_from[@]}" | jq -R . | jq -s .)"
 fi
 metadata="$(jq -nc \
-  --arg rb "$recognized_by" --arg wu "$workunit" --arg gv "$governs" --arg pk "$packet" \
-  --argjson mf "$mf_json" '
-  {"recognized-by": $rb}
+  --arg rb "$recognized_by" --arg wu "$workunit" --arg gv "$governs" --arg pk "$packet" --arg key "$key" \
+  --argjson mf "$mf_json" --argjson budget "$budget_json" '
+  {"recognized-by": $rb, "budget": $budget}
   + (if $wu != "" then {"workunit": $wu} else {} end)
   + (if $gv != "" then {"governs": $gv} else {} end)
   + (if $pk != "" then {"packet": $pk} else {} end)
+  + (if $key != "" then {"key": $key} else {} end)
   + (if ($mf | length) > 0 then {"migrated-from": $mf} else {} end)')"
 
 cmd=(bd create "$title" --type "$btype" --description "$description"
@@ -136,7 +170,8 @@ id="$(printf '%s' "$created" | jq -r '.id // empty')"
 
 # Backlink, same action (contract §6.3). The Bead side is authoritative; this repairs the manifest.
 if [[ -n "$workunit" ]]; then
-  manifest="${workunit%/}/workunit.yaml"
+  expanded_workunit="$(eb_expand_seat_root "$workunit")"
+  manifest="${expanded_workunit%/}/workunit.yaml"
   [[ -f "$manifest" ]] || die "Bead $id was created, but '$manifest' does not exist so the backlink could not be written. Create the manifest, then run: $SCRIPT_DIR/check-bead.sh --id $id. Do not re-run this script."
   if grep -qE '^beads:' "$manifest"; then
     awk -v id="$id" '{print} /^beads:[[:space:]]*$/ {print "  - " id}' "$manifest" >"${manifest}.tmp" && mv "${manifest}.tmp" "$manifest"
@@ -155,7 +190,7 @@ fi
 if [[ ${#migrated_from[@]} -gt 0 ]]; then
   printf -- '- %s | %s | migrated-from: %s | workunit: %s | by: %s\n' \
     "$(date +%F)" "$id" "$(IFS=,; printf '%s' "${migrated_from[*]}")" \
-    "${workunit:+${workunit%/}/workunit.yaml}" \
+    "${workunit:+$(eb_expand_seat_root "$workunit" | sed 's#/*$##')/workunit.yaml}" \
     "${by:-${CLAUDE_CODE_SESSION_ID:-bead-author}}" \
     | tee -a "$migration_log" >/dev/null
 fi
