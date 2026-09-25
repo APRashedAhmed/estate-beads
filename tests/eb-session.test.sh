@@ -113,6 +113,39 @@ else
   eb_bad "SessionEnd: completes within 1s on a scratch db" "took ${ELAPSED_MS}ms"
 fi
 
+# --- 5b. SessionEnd budget (fix round 1, F4): THREE claimed Beads release concurrently, all
+#         become open+unassigned, and total wall time stays under Claude's shared ~1.5s SessionEnd
+#         budget (portability-contract.md §5.5/§269) ----------------------------------------------
+BEAD6_JSON="$(BEADS_ACTOR=creator bd create "concurrent release 1" --type task -p 2 --json)"
+BEAD6_ID="$(printf '%s' "$BEAD6_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+BEAD7_JSON="$(BEADS_ACTOR=creator bd create "concurrent release 2" --type task -p 2 --json)"
+BEAD7_ID="$(printf '%s' "$BEAD7_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+BEAD8_JSON="$(BEADS_ACTOR=creator bd create "concurrent release 3" --type task -p 2 --json)"
+BEAD8_ID="$(printf '%s' "$BEAD8_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+SID_MULTI="77777777-7777-7777-7777-777777777777"
+BEADS_ACTOR="$SID_MULTI" bd update "$BEAD6_ID" --claim --json >/dev/null
+BEADS_ACTOR="$SID_MULTI" bd update "$BEAD7_ID" --claim --json >/dev/null
+BEADS_ACTOR="$SID_MULTI" bd update "$BEAD8_ID" --claim --json >/dev/null
+
+T0=$(date +%s%N)
+bash "$END" <<<"$(sessionend_payload "$SID_MULTI")" >/dev/null
+T1=$(date +%s%N)
+ELAPSED3_NS=$((T1 - T0))
+ELAPSED3_MS=$((ELAPSED3_NS / 1000000))
+
+for bid in "$BEAD6_ID" "$BEAD7_ID" "$BEAD8_ID"; do
+  st="$(bd show --json "$bid" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["status"])')"
+  asn="$(bd show --json "$bid" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0].get("assignee") or "")')"
+  assert_eq "SessionEnd (3 claims): $bid is released (status open)" "open" "$st"
+  assert_eq "SessionEnd (3 claims): $bid is unassigned" "" "$asn"
+done
+
+if [ "$ELAPSED3_NS" -lt 1500000000 ]; then
+  eb_ok "SessionEnd: 3 concurrent claims release within 1.5s on a scratch db (${ELAPSED3_MS}ms)"
+else
+  eb_bad "SessionEnd: 3 concurrent claims release within 1.5s on a scratch db" "took ${ELAPSED3_MS}ms"
+fi
+
 # --- 6. Both hooks no-op silently when BEADS_DIR does not resolve ------------------------------
 OUT_NODB="$(env -u BEADS_DIR bash "$START" <<<"$(sessionstart_payload "cccccccc-cccc-cccc-cccc-cccccccccccc")" 2>&1)"
 if printf '%s' "$OUT_NODB" | grep -q 'Beads Workflow Context'; then
