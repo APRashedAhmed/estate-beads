@@ -109,8 +109,11 @@ ok "data: own-name acceptance is byte-identical across twins (py vs sh)" '[ "$PY
 FOREIGN_ROOT="$FIXTMP/foreign-plugin-root"
 mkdir -p "$FOREIGN_ROOT/.claude-plugin"
 printf '{"name":"some-other-plugin","description":"x","author":{"name":"t"}}\n' > "$FOREIGN_ROOT/.claude-plugin/plugin.json"
-PY_ROOT_FOREIGN="$(CLAUDE_PLUGIN_ROOT="$FOREIGN_ROOT" python3 "$ROOT/lib/eb_root.py" --source plugin)"
-SH_ROOT_FOREIGN="$(CLAUDE_PLUGIN_ROOT="$FOREIGN_ROOT" bash "$ROOT/bin/eb-root.sh" --source plugin)"
+# SEAT_ROOT/EB_WORKSPACE_SIBLING unset here on purpose: they open a later, legitimate tier
+# (design §12.4, the dev-checkout fallback) that this assertion is not testing — it isolates
+# ambient-root rejection down to the last-resort tier.
+PY_ROOT_FOREIGN="$(env -u SEAT_ROOT -u EB_WORKSPACE_SIBLING -u EB_PLUGINS_JSON CLAUDE_PLUGIN_ROOT="$FOREIGN_ROOT" python3 "$ROOT/lib/eb_root.py" --source plugin)"
+SH_ROOT_FOREIGN="$(env -u SEAT_ROOT -u EB_WORKSPACE_SIBLING -u EB_PLUGINS_JSON CLAUDE_PLUGIN_ROOT="$FOREIGN_ROOT" bash "$ROOT/bin/eb-root.sh" --source plugin)"
 ok "plugin: a foreign CLAUDE_PLUGIN_ROOT (plugin.json name != $NAME) is rejected -> script-relative" \
    'printf "%s" "$PY_ROOT_FOREIGN" | grep -q "script-relative"'
 ok "plugin: foreign-root rejection is byte-identical across twins (py vs sh)" '[ "$PY_ROOT_FOREIGN" = "$SH_ROOT_FOREIGN" ]'

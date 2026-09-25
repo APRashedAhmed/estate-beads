@@ -60,6 +60,10 @@ class RootError(RuntimeError):
     """An explicit root override is set but is not an existing absolute directory."""
 
 
+class UnownedRootError(RuntimeError):
+    """The last-resort script-relative fallback does not resolve to this plugin."""
+
+
 def _norm(path):
     return os.path.realpath(path)
 
@@ -119,6 +123,35 @@ def _git_toplevel():
     return _norm(out) if out and os.path.isdir(out) else None
 
 
+def _registry_root():
+    """installPath from installed_plugins.json for estate-beads@homelab-plugins (design §12.4),
+    preferring scope "user" then the first record. This is the cross-plugin tier: the only one
+    that resolves correctly for a vendored copy of this twin running inside another plugin's
+    tree, where script-relative would resolve into that foreign plugin's own directory."""
+    json_path = os.environ.get(
+        "EB_PLUGINS_JSON",
+        os.path.join(
+            os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"),
+            "plugins/installed_plugins.json",
+        ),
+    )
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        records = data.get("plugins", {}).get("estate-beads@homelab-plugins", [])
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not records:
+        return None
+    ordered = [r for r in records if r.get("scope") == "user"] + records
+    install_path = ordered[0].get("installPath")
+    if not install_path or not os.path.isdir(install_path):
+        return None
+    if not _owns_plugin_root(install_path):
+        return None
+    return _norm(install_path)
+
+
 def resolve_plugin_root():
     value = _from_env(ENV_PLUGIN_OWN)
     if value is not None:
@@ -129,7 +162,20 @@ def resolve_plugin_root():
             return value, var
         # set but NOT ours (a foreign plugin's ambient root, or no manifest there): never
         # trust it — fall through exactly as if it were unset (E2E finding).
-    return _script_relative_root(), "script-relative"
+    registry = _registry_root()
+    if registry is not None:
+        return registry, "installed-registry"
+    sibling = os.environ.get("EB_WORKSPACE_SIBLING") or (
+        os.path.join(os.environ["SEAT_ROOT"], "engineering/agentic/plugins/estate-beads")
+        if os.environ.get("SEAT_ROOT")
+        else None
+    )
+    if sibling and os.path.isdir(sibling) and _owns_plugin_root(sibling):
+        return _norm(sibling), "workspace-sibling"
+    root = _script_relative_root()
+    if not _owns_plugin_root(root):
+        raise UnownedRootError(f"script-relative plugin root is not {PLUGIN_NAME}: {root}")
+    return root, "script-relative"
 
 
 def resolve_project_root(stdin_cwd=None):
@@ -221,6 +267,9 @@ def main(argv=None):
     except RootError as exc:
         sys.stderr.write(f"eb_root: {exc}\n")
         return 2
+    except UnownedRootError as exc:
+        sys.stderr.write(f"eb_root: {exc}\n")
+        return 1
 
     if want_source:
         sys.stdout.write(f"{path}\t{source}\n")

@@ -15,14 +15,14 @@
 # Stdout: one "<id>: <bead-report-success.sh's own stdout line>" per Bead named
 # in `beads:`, in list order.
 #
-# KNOWN GAP (recorded in reviews/u5-batch.md): the checkpoint dispatcher's
-# `ckpt-participants.sh` v1 runs a `kind: shell` participant's `run:` line
-# verbatim via Bash and passes it NO per-run values (see
-# ~/.claude/checkpoint.d/at-checkpoint-saved.yml's header comment) — it cannot
-# hand this script the archived handoff path it just produced. Until that
-# dispatcher gains per-run value passing, this script accepts the path only
-# via $1 or $CKPT_HANDOFF_PATH; given neither, it fails LOUD (never a silent
-# no-op) naming the gap, so a real closeout surfaces it in the health notice
+# GAP CLOSED (was recorded in reviews/u5-batch.md): the checkpoint dispatcher's
+# `ckpt-participants.sh` now accepts `--handoff <path>` and, under `--event`,
+# prefixes a `kind: shell` participant's emitted `run:` line with
+# `CKPT_HANDOFF_PATH=<path>` (right after `CKPT_EVENT=<event>`) on a closeout
+# event — the save-checkpoint skill resolves and passes the archived handoff's
+# own path there. This script reads that variable (falling back to $1); given
+# neither, it still fails LOUD (never a silent no-op) naming the gap, so an
+# un-upgraded dispatcher (or a manual invocation) surfaces in the health notice
 # rather than quietly skipping the Beads.
 set -uo pipefail
 
