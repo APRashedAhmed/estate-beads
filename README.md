@@ -74,25 +74,32 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
   is only possible under an isolated settings source
   (`claude -p --setting-sources "" --settings <file>`), not in a normal session — this guard's
   scratch-form allow is inert against the live deny in the meantime.
-- **`bd` verb aliases not covered by the guard.** The decision table denies specific verbs
-  (`init` unqualified, `delete`, `remember`, `edit`, `sql`, `create`, `close`,
-  `update --status closed`, `update --append-notes`) and allows everything else, including
-  unknown verbs, per the plan's literal table. `bd` 1.3.0 ships several alias/adjacent
-  subcommands not in that table — `bd q` (quick create, `create`'s alias), `bd note` (append-note
-  alias of `--append-notes`), `bd unclaim`/`bd reclaim`/`bd assign`/`bd set-state` (claim/assign
-  paths adjacent to `--claim`/`--status`) — that route around the corresponding deny. Recorded
-  as a follow-up for U4/U7, not fixed here (out of this unit's literal spec).
-- **`SessionEnd` timing margin, n=1.** Measured 750–900ms on a scratch db
-  (`tests/eb-session.test.sh`) for **one** claimed Bead; each `bead-release.sh` chain is ~4 `bd`
-  invocations (~600ms), so a session releasing two or more claims risks exceeding Claude's
-  documented ~1.5s total `SessionEnd` budget (portability-contract.md §5.5) — the harness, not
-  `hooks.json`'s own `"timeout": 5`, is what actually caps this. Not fixed here; flagged for U7.
-- **Wrapper/keyword commands the guard does not special-case.** `bash -c "bd close x"`, `sh -c
-  ...`, `eval "..."`, `xargs bd ...`, `timeout 5 bd ...`, `nohup bd ...`, `time bd ...`, `sudo bd
-  ...`, `if bd close x; then ...`, `! bd ...` all fall to "first token isn't `bd`" and are
-  allowed — same class of gap as the verb aliases above, not covered by the plan's literal
-  decision table. The quoted-string cases (`bash -c 'bd close x'` as a literal string argument)
-  are spec-sanctioned by the "quoted text → allow" row; the executable-wrapper cases are not.
+- **`bd` verb aliases (fix round 1, F1) — closed.** `done`→`close`, `new`/`q`→`create`,
+  `note`→`update --append-notes`, and `-s`/`-s=`→`--status` are now canonicalized before judging
+  (`scripts/eb-guard.py`'s `VERB_ALIASES` table) and denied with the same message as their
+  canonical verb. `bd unclaim`/`bd reclaim`/`bd assign`/`bd set-state` remain genuinely allowed
+  (adjacent claim/assign paths, not aliases of a denied verb) — not a gap.
+- **Wrapper/keyword/shell-string commands (fix round 1, F2/F3) — closed.** Shell reserved words
+  (`if`/`then`/`else`/`elif`/`do`/`while`/`until`/`!`/`{`/`time`) and wrappers with their own
+  options/values (`timeout N`, `nohup`, `sudo [opts]`, `exec`, `command`, `nice [-n N]`,
+  `xargs [opts]`) are skipped before landing on `bd`. `bash -c "..."` / `sh -c '...'` / `zsh -c
+  ...` / `eval "..."` recurse into the executed string as a nested command — a `bd` token inside
+  such a string is an invocation, never merely "quoted text mentioning bd" (that allow row is for
+  a genuinely non-executing command, e.g. `echo "run bd close later"`).
+- **Global flags before the verb (fix round 1, F5) — closed.** `bd --json close x` / `bd -q close
+  x` no longer misread the flag as the verb; `_skip_global_flags` locates the real verb after any
+  leading `-`-prefixed global flags (including value-taking ones like `--db`/`--database`/`-C`).
+- **`bd reopen` (fix round 1, F6) — closed.** Denied, naming `scripts/bead-reopen.sh` as the
+  sanctioned wrapper for the same open-a-closed-Bead transition.
+- **`SessionEnd` timing margin (fix round 1, F4) — mitigated, not eliminated.** The
+  status+assignee release is now a single batched `bd update <id...> --status open --assignee ""`
+  call per distinct assignee (measured ~185ms for 2 ids, vs. ~750-900ms/id for the full
+  `bead-release.sh` chain) run synchronously, so the release state lands even under budget
+  pressure. The rule-5 progress note (needs a per-Bead `bd show` to preserve COMPLETED/NEXT) is
+  backgrounded one job per Bead under a dynamic remaining-budget deadline. Measured: 3 concurrent
+  claims release (status+assignee, asserted by `tests/eb-session.test.sh`) in ~1.31s on a scratch
+  db, under the ~1.5s shared budget — but the deadline can still truncate the note-writing phase
+  for a large claim count; the release state itself is unaffected.
 - **Scratch-allow reachability, checked live:** `git -C $SEAT_ROOT/scratch rev-parse --git-dir`
   and `git -C $SEAT_ROOT rev-parse --git-dir` both report "not a git repository" — the scratch
   form's cwd-outside-git-repo check is satisfiable at the estate's actual scratch path.
