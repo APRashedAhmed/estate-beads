@@ -32,7 +32,7 @@ import sys
 DENY_MESSAGES = {
     "init": (
         "bd init is denied except the scratch form `env -u BEADS_DIR bd init ...` run with a "
-        "cwd outside any git repository. See references/working.md and README.md 'Known gaps' "
+        "cwd outside any git repository. See references/authoring.md and README.md 'Known gaps' "
         "for the transition-window note."
     ),
     "delete": "bd delete is denied. There is no script wrapper; this operation is off-limits from a Bash call.",
