@@ -6,6 +6,8 @@
 # The reviewer never mutates Bead state; no hook closes a Bead; this is the only closer.
 # Decision vocabulary on stdout, one line:
 #   CLOSED | ACCEPTANCE-PENDING <authority> | FAILED <cycles-left> | HALTED [<reason>] | INCOMPLETE
+#   | BLOCKED-BY <ids> (exit 1: the Bead has open blockers; nothing was changed, re-run once they
+#   close)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

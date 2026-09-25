@@ -154,7 +154,8 @@ is the fragment appended to its brief), and the executor's session runs
 state. Rule 9 in `references/working.md` carries the four stdout branches
 (`CLOSED | FAILED <cycles-left> | HALTED [<reason>] | INCOMPLETE`) verbatim from that script's
 decision vocabulary, so a change to the script's tokens is a breaking change to the skill's prose
-too.
+too. A fifth branch, `BLOCKED-BY <ids>` (exit 1), fires before any mutation when the Bead has open
+blockers; nothing changes and the caller re-runs once they close.
 
 **Register.** SKILL.md is `function=procedure` (a router with two operative facts) and Navigation
 shape (~30 lines) rather than the plain-router size the label alone suggests.

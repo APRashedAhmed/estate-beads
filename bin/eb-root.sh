@@ -143,6 +143,25 @@ _owns_data_path() {
   return 1
 }
 
+# _registry_root -> prints installPath from ~/.claude/plugins/installed_plugins.json for
+# estate-beads@homelab-plugins (prefer scope "user", else the first record), or returns 1.
+# design §12.4: consumers never hardcode a cache path; this is the cross-plugin tier — the
+# ONLY tier that resolves correctly for a vendored copy of this script running inside another
+# plugin's tree, where CLAUDE_PLUGIN_ROOT (if set at all) names the FOREIGN caller plugin and
+# script-relative would resolve into that foreign plugin's own directory.
+_registry_root() {
+  local json="${EB_PLUGINS_JSON:-$HOME/.claude/plugins/installed_plugins.json}" ip
+  command -v jq >/dev/null 2>&1 || return 1
+  [ -f "$json" ] || return 1
+  ip="$(jq -r '
+    (.plugins["estate-beads@homelab-plugins"] // [])
+    | (map(select(.scope == "user")) + .)[0].installPath // empty
+  ' "$json" 2>/dev/null)"
+  [ -n "$ip" ] && [ -d "$ip" ] || return 1
+  _owns_plugin_root "$ip" || return 1
+  _norm "$ip"
+}
+
 _resolve_plugin() {  # sets OUT_PATH / OUT_SOURCE
   local v rc
   rc=0; v="$(_from_env "${ENVPREFIX}_PLUGIN_ROOT")" || rc=$?
@@ -159,6 +178,17 @@ _resolve_plugin() {  # sets OUT_PATH / OUT_SOURCE
     fi
     [ "$rc" -eq 10 ] || exit "$rc"
   done
+
+  v="$(_registry_root)" && [ -n "$v" ] && { OUT_PATH="$v"; OUT_SOURCE="installed-registry"; return 0; }
+
+  v="${EB_WORKSPACE_SIBLING:-}"
+  if [ -z "$v" ] && [ -n "${SEAT_ROOT:-}" ]; then
+    v="$SEAT_ROOT/engineering/agentic/plugins/estate-beads"
+  fi
+  if [ -n "$v" ] && [ -d "$v" ] && _owns_plugin_root "$v"; then
+    OUT_PATH="$(_norm "$v")"; OUT_SOURCE="workspace-sibling"; return 0
+  fi
+
   OUT_PATH="$(_script_relative_root)"
   OUT_SOURCE="script-relative"
 }
