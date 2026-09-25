@@ -6,9 +6,9 @@ The tracker adapter the `wayfinder` skill consults. Work in flight lives in the 
 (`$BEADS_DIR`, prefix `pa`). Prose the operator reads, and that a spec later collapses, lives in the
 effort's work-unit directory under `$SEAT_ROOT/PerAnkh/projects/<project>/workunits/<date>-<effort>/`.
 Beads carry lifecycle; files carry text. Every write follows the `beads` skill; nothing here
-overrides it. Vocabulary: **Bead** (never ticket or issue), **OPERATOR** and **AUTO** modes (never
-HITL or AFK), **map Bead** for the effort's epic, **ready set** for the takeable Beads, **map holder**
-for the session that loaded the map.
+overrides it. Vocabulary: the word is **Bead**; the tracker-generic noun is not used (nor is
+"issue"), **OPERATOR** and **AUTO** modes (never HITL or AFK), **map Bead** for the effort's epic,
+**ready set** for the takeable Beads, **map holder** for the session that loaded the map.
 
 ## Conventions
 
@@ -21,8 +21,9 @@ for the session that loaded the map.
   reads; the id rides inside.
 - Operator rulings are written to the design note, never to a Bead (rule 7 carrier table).
 - Authoring passes the T1–T5 gate. The recognition source (T2) for a child Bead is the charting
-  invocation or the resolving Bead that surfaced it. Until the batch script ships, brief `bead-author`
-  per `delegating-authoring.md`; afterwards, one batch call per charting or graduation pass.
+  invocation or the resolving Bead that surfaced it. Until the batch script ships, brief
+  `estate-beads:bead-author` per `authoring.md`; afterwards, one batch call per charting or
+  graduation pass.
 
 ## Operations
 
@@ -42,7 +43,7 @@ for the session that loaded the map.
 - **Ready set**: `bd ready -l wf:<effort-slug> --json`. `bd ready` drops in-progress (claimed), blocked,
   and deferred Beads (verified live 2026-09-24); the explicit effort label scopes it to this map. First
   row wins unless the operator names a Bead.
-- **Claim**: `~/.claude/skills/beads/scripts/bead-claim.sh --id <id>` before any work. `CLAIMED` →
+- **Claim**: `${CLAUDE_PLUGIN_ROOT}/scripts/bead-claim.sh --id <id>` before any work. `CLAIMED` →
   proceed; `LOST` → take the next ready row. Never work an unclaimed Bead.
 - **Resolve (OPERATOR)**: 1. append the ruling to the design note's `## Decisions` as
   `Operator direction (YYYY-MM-DD): <ruling> — <Bead title> (pa-xxxx)`; 2.
