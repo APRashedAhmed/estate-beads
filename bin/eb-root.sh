@@ -150,7 +150,7 @@ _owns_data_path() {
 # plugin's tree, where CLAUDE_PLUGIN_ROOT (if set at all) names the FOREIGN caller plugin and
 # script-relative would resolve into that foreign plugin's own directory.
 _registry_root() {
-  local json="${EB_PLUGINS_JSON:-$HOME/.claude/plugins/installed_plugins.json}" ip
+  local json="${EB_PLUGINS_JSON:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json}" ip
   command -v jq >/dev/null 2>&1 || return 1
   [ -f "$json" ] || return 1
   ip="$(jq -r '
@@ -189,7 +189,12 @@ _resolve_plugin() {  # sets OUT_PATH / OUT_SOURCE
     OUT_PATH="$(_norm "$v")"; OUT_SOURCE="workspace-sibling"; return 0
   fi
 
-  OUT_PATH="$(_script_relative_root)"
+  v="$(_script_relative_root)"
+  if ! _owns_plugin_root "$v"; then
+    printf 'eb-root: script-relative plugin root is not %s: %s\n' "$PLUGIN_NAME" "$v" >&2
+    exit 1
+  fi
+  OUT_PATH="$v"
   OUT_SOURCE="script-relative"
 }
 

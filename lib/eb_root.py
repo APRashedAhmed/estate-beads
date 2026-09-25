@@ -60,6 +60,10 @@ class RootError(RuntimeError):
     """An explicit root override is set but is not an existing absolute directory."""
 
 
+class UnownedRootError(RuntimeError):
+    """The last-resort script-relative fallback does not resolve to this plugin."""
+
+
 def _norm(path):
     return os.path.realpath(path)
 
@@ -126,7 +130,10 @@ def _registry_root():
     tree, where script-relative would resolve into that foreign plugin's own directory."""
     json_path = os.environ.get(
         "EB_PLUGINS_JSON",
-        os.path.expanduser("~/.claude/plugins/installed_plugins.json"),
+        os.path.join(
+            os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"),
+            "plugins/installed_plugins.json",
+        ),
     )
     try:
         with open(json_path, "r", encoding="utf-8") as f:
@@ -165,7 +172,10 @@ def resolve_plugin_root():
     )
     if sibling and os.path.isdir(sibling) and _owns_plugin_root(sibling):
         return _norm(sibling), "workspace-sibling"
-    return _script_relative_root(), "script-relative"
+    root = _script_relative_root()
+    if not _owns_plugin_root(root):
+        raise UnownedRootError(f"script-relative plugin root is not {PLUGIN_NAME}: {root}")
+    return root, "script-relative"
 
 
 def resolve_project_root(stdin_cwd=None):
@@ -257,6 +267,9 @@ def main(argv=None):
     except RootError as exc:
         sys.stderr.write(f"eb_root: {exc}\n")
         return 2
+    except UnownedRootError as exc:
+        sys.stderr.write(f"eb_root: {exc}\n")
+        return 1
 
     if want_source:
         sys.stdout.write(f"{path}\t{source}\n")
