@@ -49,7 +49,12 @@ def main() -> int:
         print(f"frontmatter.py: '{path}' frontmatter is not a mapping", file=sys.stderr)
         return 1
 
-    print(json.dumps(data))
+    # default=str: PyYAML parses an unquoted date/datetime scalar (e.g. a handoff's
+    # `updated: 2026-09-24`) into a datetime.date/datetime object, which json.dumps
+    # otherwise rejects with "not JSON serializable". Every consumer of this script
+    # reads specific string/list fields (bead, verdict, beads, ...), never a bare
+    # date, so stringifying it here (ISO form) is lossless for them.
+    print(json.dumps(data, default=str))
     return 0
 
 

@@ -1,0 +1,46 @@
+# estate-beads-report.yaml — checkpoint registry descriptor for the estate-beads
+# close-out participant (design §12.6; plan U5).
+#
+# DESTINATION AND LIFECYCLE (this unit ships the file only; it does not place it):
+#   ~/.claude/checkpoint.d/estate-beads-report.yml
+# The operator places it (chezmoi-managed directory, lifecycle owner the
+# operator — U8 step 4). NOTE THE RENAME: ckpt-participants.sh globs only
+# "$DIR"/*.yml (checkpointing scripts/ckpt-participants.sh, the `files=("$DIR"/*.yml)`
+# line) and requires `id` to equal the filename stem (same file, the `if [ "$id" !=
+# "$stem" ]` validation) — placed verbatim as `estate-beads-report.yaml` it is
+# silently invisible to the registry glob. Rename the extension to `.yml` on
+# placement; do not change the `id:` value below.
+#
+# Schema and field meanings: checkpointing/skills/save-checkpoint/SKILL.md
+# "The registry" (lines 27-53) and scripts/ckpt-participants.sh's validation.
+#
+# KNOWN GAP (see scripts/eb-closeout-report.sh's own header): a `kind: shell`
+# participant's `run:` line is executed verbatim via Bash with NO per-run
+# values from the dispatcher (ckpt-participants.sh v1; the same limitation
+# ~/.claude/checkpoint.d/at-checkpoint-saved.yml's header documents for
+# outcome/participant_count). The archived handoff path this participant needs
+# is therefore NOT available to it today. The `run:` line below reads it from
+# $CKPT_HANDOFF_PATH, which no current dispatcher version sets — until it does,
+# every real closeout logs this participant's failure (naming the gap) in the
+# health surface (step 7 of save-checkpoint's procedure), rather than silently
+# skipping the Beads. Recorded as a checkpointing follow-up in reviews/u5-batch.md.
+id: estate-beads-report
+kind: shell
+# Resolves estate-beads' installed path the way design §12.4 specifies for
+# every cross-plugin consumer (~/.claude/plugins/installed_plugins.json
+# .plugins["estate-beads@homelab-plugins"].installPath, never a commit sha),
+# falling back to the workspace sibling for a dev checkout. NOT via
+# bin/eb-root.sh: that helper's script-relative fallback needs an absolute
+# path to itself already in hand, which is exactly what this line is
+# bootstrapping from a totally external shell (the operator's live session),
+# so it cannot be the bootstrap step here.
+run: "P=$(jq -r '.plugins[\"estate-beads@homelab-plugins\"].installPath // empty' ~/.claude/plugins/installed_plugins.json 2>/dev/null); [ -n \"$P\" ] || P=\"${SEAT_ROOT:-$HOME/heliopolis}/engineering/agentic/plugins/estate-beads\"; bash \"$P/scripts/eb-closeout-report.sh\" \"${CKPT_HANDOFF_PATH:-}\""
+order: 40
+# on: closeout only — this participant reports Beads at the end of a
+# work-unit, never on an ordinary mid-session checkpoint refresh.
+on: [closeout]
+dispatch: inline
+enabled: true
+optional: false
+description: "Report success on every Bead named in the closed work-unit's archived handoff (bead-report-success.sh per id); never dispatches the accepting review."
+# owner: "estate-beads plugin (scripts/eb-closeout-report.sh)"
