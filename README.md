@@ -6,7 +6,13 @@ Beads work-tracking for the estate: create, claim, report, accept, release and g
 `/plugin install estate-beads@homelab-plugins` (or standalone via this repo's `marketplace.json`).
 
 ## Components
-<!-- list skills / agents / commands / hooks as you add them -->
+- **Skill** `skills/beads` — one routed skill (`estate-beads:beads`). Router in `SKILL.md`;
+  `references/authoring.md` (create one Bead, or many from an artifact), `references/working.md`
+  (the thirteen rules), `references/review-brief.md` (the review-acceptance brief fragment).
+- **Agent** `agents/bead-author.md` (`estate-beads:bead-author`) — the exception-path Bead-authoring
+  subagent; a fresh spawn, never a fork.
+- **Hooks** `hooks/hooks.json` — `scripts/eb-guard.py` (`PreToolUse(Bash)`), `scripts/eb-session-start.sh`,
+  `scripts/eb-session-end.sh`. See the support matrix below.
 
 ## Dependencies
 Stdlib-only. <!-- list any non-stdlib runtime dependency here; prefer stdlib-only -->
@@ -107,6 +113,57 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
   itself looks positional (e.g. an id-shaped `--if-assignee` value preceding the real id) could
   be misread as the id. The failure direction is safe (an unresolvable/wrong id makes `bd show`
   fail, which fails closed to deny), never a false allow.
+
+## Skill and agent design notes
+
+Rationale for the shape of `skills/beads` and `agents/bead-author.md`. Not loaded at runtime.
+Domain law is contract part 1 §5–§9, §13
+(`$SEAT_ROOT/PerAnkh/projects/permaat/workunits/2026-09-17-beads-state-sovereignty/01-estate-beads-contract.md`);
+the shape decision is design §3–§6, §11.1, §11.7, §12.7, §13
+(`$SEAT_ROOT/PerAnkh/projects/permaat/workunits/2026-09-24-beads-skill-redesign/2026-09-24-beads-skill-redesign-design.md`).
+
+**One routed skill, not two.** `beads` stays one skill because the law names it that way (PRIME,
+the contract, the plan all say "the `beads` skill"), the `## Now` preflight is shared, and splitting
+into `bead-authoring`/`bead-working` would duplicate that preflight or drop it from one half for a
+~50-line router-hop saving (design §3). `authoring-a-bead.md` and `delegating-authoring.md` from the
+prior (chezmoi-resident) skill merge into one `references/authoring.md`: the route table already
+read "authoring, then delegating" as one path, so DCQ-4 makes inline `create-bead.sh` the default
+and the subagent the stated exception, rather than two files always read together.
+
+**Agent and its scripts move into the plugin.** `agents/bead-author.md` and
+`scripts/transcript-window.sh` are called only from this skill; co-location is the point of a
+plugin (design §4). `agent-spawn-guard.sh` is dropped — the agent's `tools: Bash, Read, Edit` list
+already excludes `Agent`, so the hook was redundant, and dropping it removes the plugin's last
+dependency on `~/.claude/agents/estate/`.
+
+**The prose/script/hook boundary (design §5).** Every guard the deployed skill stated in prose now
+has a mechanism: the `PreToolUse(Bash)` guard (`scripts/eb-guard.py`) denies `bd init` (outside the
+scratch form), `delete`, `remember`, `edit`, `sql`, raw `create`, raw `close`/`update --status
+closed`, `update --status open` on a closed Bead, and raw `--append-notes` — each deny message names
+the sanctioned script. Every prose sentence that only warned about a mistake the hook now makes
+unreachable was deleted rather than kept as a redundant warning; see
+`$SEAT_ROOT/PerAnkh/projects/permaat/workunits/2026-09-24-beads-skill-redesign/reviews/u4-skill.md`
+for the sentence-by-sentence table. Rules 3, 8, 10, and the T1–T5 gate's judgment stay prose — they
+are the residue the guard cannot mechanize.
+
+**Review-based acceptance (design §13).** `accept:independent` now means review-accepted: a fresh
+auditor one tier above the executor emits a verdict frontmatter block (`references/review-brief.md`
+is the fragment appended to its brief), and the executor's session runs
+`scripts/bead-accept.sh --review <report>` as the sole closer — the reviewer never mutates Bead
+state. Rule 9 in `references/working.md` carries the four stdout branches
+(`CLOSED | FAILED <cycles-left> | HALTED [<reason>] | INCOMPLETE`) verbatim from that script's
+decision vocabulary, so a change to the script's tokens is a breaking change to the skill's prose
+too.
+
+**Register.** SKILL.md is `function=procedure` (a router with two operative facts) and Navigation
+shape (~30 lines) rather than the plain-router size the label alone suggests.
+`references/authoring.md` is procedure; `references/working.md` and `references/review-brief.md`
+are reference. No contents sections, no summaries, per skill-authoring concern 3
+(`~/.claude/skills/skill-authoring/references/writing-prose.md`).
+
+**Pitfalls stay at the point of action** (concern 1): the scratch-database recipe and the
+`beads.role` warning note sit in `references/authoring.md` beside the commands they concern; the
+`notes` `E2BIG` cap sits in `references/working.md` rule 5, beside `bead-progress.sh`.
 
 ## Install / Update / Uninstall
 - **Install:** `bash scripts/install.sh` (idempotent; non-interactive with `--yes`).
