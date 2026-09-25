@@ -246,14 +246,17 @@ _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _ENV_VALUE_FLAGS = {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"}
 
 # --- F2: shell reserved words the guard must see through ------------------------------------
-# These precede a command in normal shell grammar (`if bd close x; then ...`, `! bd close x`,
-# `time bd close x`) but never take their own option/value tokens — a single-token skip.
-_RESERVED_WORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "time"}
+# These precede a command in normal shell grammar (`if bd close x; then ...`, `! bd close x`) but
+# never take their own option/value tokens — a single-token skip.
+_RESERVED_WORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{"}
 
 # --- F2: wrapper commands with their OWN options/values, skipped before landing on `bd` ------
 # name -> (set of flags that consume a following value token, number of trailing positionals to
 # skip AFTER the flags before the wrapped command starts — e.g. `timeout 5 bd ...`'s duration).
+# `time` is here, not in _RESERVED_WORDS, because bash's `time` accepts its own `-p` option
+# (`time -p bd close x`) that a single-token reserved-word skip would misread as the verb.
 _WRAPPERS = {
+    "time": (set(), 0),
     "nohup": (set(), 0),
     "exec": (set(), 0),
     "command": (set(), 0),
@@ -379,7 +382,7 @@ def _skip_global_flags(args):
     Returns the index of the first non-flag token (the verb), or len(args) if none. Skips the
     value token of any global flag known to take one."""
     value_flags = {
-        "--database", "--db", "-C", "--directory", "--dolt-auto-commit", "--mem-profile",
+        "--actor", "--database", "--db", "-C", "--directory", "--dolt-auto-commit", "--mem-profile",
     }
     i = 0
     n = len(args)

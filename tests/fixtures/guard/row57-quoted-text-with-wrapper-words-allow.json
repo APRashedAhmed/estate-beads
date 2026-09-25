@@ -4,7 +4,7 @@
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
-    "command": "echo \"run bd close later\""
+    "command": "echo \"if bd close pa-x; then timeout 5 bd close pa-x; fi\""
   },
   "cwd": "__CWD__",
   "expected": "allow",
