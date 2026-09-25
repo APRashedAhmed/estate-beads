@@ -1,0 +1,7 @@
+{
+  "id": "row06-semicolon-chain-close",
+  "command": "bd close pa-x; echo done",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "bead-report-success.sh"
+}

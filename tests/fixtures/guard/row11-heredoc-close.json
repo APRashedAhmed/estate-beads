@@ -1,0 +1,7 @@
+{
+  "id": "row11-heredoc-close",
+  "command": "cat <<EOF\nbd close pa-x\nEOF",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "bead-report-success.sh"
+}

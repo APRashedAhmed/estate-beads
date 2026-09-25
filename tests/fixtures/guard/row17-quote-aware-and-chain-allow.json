@@ -1,0 +1,7 @@
+{
+  "id": "row17-quote-aware-and-chain-allow",
+  "command": "echo \"a && bd close x\"",
+  "cwd": "__CWD__",
+  "expect": "allow",
+  "reason_contains": ""
+}

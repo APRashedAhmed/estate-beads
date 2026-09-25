@@ -1,0 +1,7 @@
+{
+  "id": "row05-and-chain-init",
+  "command": "cd x && bd init",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "bd init"
+}

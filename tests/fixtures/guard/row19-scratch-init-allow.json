@@ -1,0 +1,7 @@
+{
+  "id": "row19-scratch-init-allow",
+  "command": "env -u BEADS_DIR bd init --skip-hooks --skip-agents --non-interactive --prefix t",
+  "cwd": "__NONGIT_CWD__",
+  "expect": "allow",
+  "reason_contains": ""
+}

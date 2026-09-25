@@ -1,0 +1,7 @@
+{
+  "id": "row29-update-status-open-on-closed-deny",
+  "command": "bd update __CLOSED_ID__ --status open",
+  "cwd": "__SCRATCH_CWD__",
+  "expect": "deny",
+  "reason_contains": "bead-accept.sh"
+}

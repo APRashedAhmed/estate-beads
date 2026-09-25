@@ -1,0 +1,7 @@
+{
+  "id": "row16-parse-failure-no-bd",
+  "command": "echo \"unterminated",
+  "cwd": "__CWD__",
+  "expect": "allow",
+  "reason_contains": ""
+}

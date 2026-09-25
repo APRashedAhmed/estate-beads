@@ -1,0 +1,7 @@
+{
+  "id": "row30-update-status-open-bd-show-fails-deny",
+  "command": "bd update t-doesnotexist --status open",
+  "cwd": "__SCRATCH_CWD__",
+  "expect": "deny",
+  "reason_contains": "bead-accept.sh"
+}

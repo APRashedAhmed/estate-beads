@@ -1,0 +1,7 @@
+{
+  "id": "row34-raw-edit-deny",
+  "command": "bd edit t-1",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "off-limits"
+}

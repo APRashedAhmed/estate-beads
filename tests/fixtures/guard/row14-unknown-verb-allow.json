@@ -1,0 +1,7 @@
+{
+  "id": "row14-unknown-verb-allow",
+  "command": "bd frobnicate pa-x",
+  "cwd": "__CWD__",
+  "expect": "allow",
+  "reason_contains": ""
+}

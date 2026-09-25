@@ -1,0 +1,7 @@
+{
+  "id": "row28-update-status-open-on-open-allow",
+  "command": "bd update __OPEN_ID__ --status open",
+  "cwd": "__SCRATCH_CWD__",
+  "expect": "allow",
+  "reason_contains": ""
+}

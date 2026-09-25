@@ -1,0 +1,7 @@
+{
+  "id": "row27-update-status-in-progress-allow",
+  "command": "bd update t-1 --status in_progress --assignee alice",
+  "cwd": "__CWD__",
+  "expect": "allow",
+  "reason_contains": ""
+}

@@ -1,0 +1,7 @@
+{
+  "id": "row33-raw-remember-deny",
+  "command": "bd remember \"insight\"",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "off-limits"
+}

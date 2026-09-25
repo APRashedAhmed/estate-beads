@@ -1,0 +1,7 @@
+{
+  "id": "row32-raw-delete-deny",
+  "command": "bd delete t-1",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "off-limits"
+}

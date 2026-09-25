@@ -1,0 +1,7 @@
+{
+  "id": "row10-subshell-paren-close",
+  "command": "(bd close pa-x)",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "bead-report-success.sh"
+}

@@ -1,0 +1,7 @@
+{
+  "id": "row20-scratch-init-in-git-repo-deny",
+  "command": "env -u BEADS_DIR bd init --skip-hooks --skip-agents --non-interactive --prefix t",
+  "cwd": "__GIT_CWD__",
+  "expect": "deny",
+  "reason_contains": "scratch form"
+}

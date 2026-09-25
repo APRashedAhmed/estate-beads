@@ -1,0 +1,7 @@
+{
+  "id": "row08-pipeline-close",
+  "command": "bd close pa-x | cat",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "bead-report-success.sh"
+}

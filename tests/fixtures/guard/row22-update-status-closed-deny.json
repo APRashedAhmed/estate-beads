@@ -1,0 +1,7 @@
+{
+  "id": "row22-update-status-closed-deny",
+  "command": "bd update t-1 --status closed",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "bead-report-success.sh"
+}

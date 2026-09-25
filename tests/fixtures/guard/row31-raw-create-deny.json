@@ -1,0 +1,7 @@
+{
+  "id": "row31-raw-create-deny",
+  "command": "bd create \"x\" --type task",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "create-bead.sh"
+}

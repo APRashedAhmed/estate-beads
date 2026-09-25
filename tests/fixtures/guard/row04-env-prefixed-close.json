@@ -1,0 +1,7 @@
+{
+  "id": "row04-env-prefixed-close",
+  "command": "env FOO=1 bd close pa-x",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "bead-report-success.sh"
+}

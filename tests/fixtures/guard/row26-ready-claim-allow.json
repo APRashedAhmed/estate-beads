@@ -1,0 +1,7 @@
+{
+  "id": "row26-ready-claim-allow",
+  "command": "bd ready --claim",
+  "cwd": "__CWD__",
+  "expect": "allow",
+  "reason_contains": ""
+}

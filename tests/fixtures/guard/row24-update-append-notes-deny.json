@@ -1,0 +1,7 @@
+{
+  "id": "row24-update-append-notes-deny",
+  "command": "bd update t-1 --append-notes \"hi\"",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "bead-progress.sh"
+}

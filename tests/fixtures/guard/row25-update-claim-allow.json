@@ -1,0 +1,7 @@
+{
+  "id": "row25-update-claim-allow",
+  "command": "bd update t-1 --claim",
+  "cwd": "__CWD__",
+  "expect": "allow",
+  "reason_contains": ""
+}

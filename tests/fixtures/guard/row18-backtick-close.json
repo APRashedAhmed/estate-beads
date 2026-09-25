@@ -1,0 +1,7 @@
+{
+  "id": "row18-backtick-close",
+  "command": "echo `bd close pa-x`",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "bead-report-success.sh"
+}

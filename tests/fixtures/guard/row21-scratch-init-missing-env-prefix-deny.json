@@ -1,0 +1,7 @@
+{
+  "id": "row21-scratch-init-missing-env-prefix-deny",
+  "command": "bd init --skip-hooks --non-interactive --prefix t",
+  "cwd": "__NONGIT_CWD__",
+  "expect": "deny",
+  "reason_contains": "scratch form"
+}

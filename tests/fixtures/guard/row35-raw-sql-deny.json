@@ -1,0 +1,7 @@
+{
+  "id": "row35-raw-sql-deny",
+  "command": "bd sql 'select 1'",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "off-limits"
+}

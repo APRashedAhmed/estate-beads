@@ -1,0 +1,7 @@
+{
+  "id": "row02-path-qualified-close",
+  "command": "/home/x/.local/bin/bd close pa-x",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "bead-report-success.sh"
+}

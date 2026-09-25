@@ -1,0 +1,7 @@
+{
+  "id": "row15-parse-failure-bd-present",
+  "command": "bd close \"pa-x",
+  "cwd": "__CWD__",
+  "expect": "deny",
+  "reason_contains": "could not be parsed"
+}

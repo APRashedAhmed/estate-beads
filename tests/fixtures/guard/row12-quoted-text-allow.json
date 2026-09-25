@@ -1,0 +1,7 @@
+{
+  "id": "row12-quoted-text-allow",
+  "command": "echo \"run bd close later\"",
+  "cwd": "__CWD__",
+  "expect": "allow",
+  "reason_contains": ""
+}
