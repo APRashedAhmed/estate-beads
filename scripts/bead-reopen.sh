@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Reopen a closed Bead on a later FAIL review verdict whose `prior` is the closing PASS report
+# recorded in `close_reason` (contract §5.5). Same frontmatter form and tier rule as bead-accept.sh
+# --review; consumes no cycle. The reviewer never mutates state; this script is the sole act.
+# Decision vocabulary on stdout, one word: REOPENED.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SELF="bead-reopen"
+die() { printf '%s: %s\n' "$SELF" "$1" >&2; exit "${2:-1}"; }
+
+# shellcheck source=lib/eb-common.sh
+source "$SCRIPT_DIR/lib/eb-common.sh"
+
+review=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --review) review="${2-}"; shift 2 ;;
+    *) die "unknown flag '$1'. Flags: --review <report-path>" ;;
+  esac
+done
+[[ -n "$review" ]] || die "missing required --review <report-path>."
+[[ -f "$review" ]] || die "no report at '$review'. Confirm the path, then re-run."
+command -v jq >/dev/null || die "jq not on PATH. Install jq, then re-run."
+
+fm="$(eb_read_frontmatter "$SCRIPT_DIR/lib" "$review")" \
+  || die "'$review' has no readable YAML frontmatter (bead/verdict/reviewer/spawn/prior). Fix it, then re-run."
+
+r_bead="$(printf '%s' "$fm" | jq -r '.bead // ""')"
+r_verdict="$(printf '%s' "$fm" | jq -r '.verdict // ""')"
+r_model="$(printf '%s' "$fm" | jq -r '.reviewer.model // ""')"
+r_spawn="$(printf '%s' "$fm" | jq -r '.spawn // ""')"
+r_prior="$(printf '%s' "$fm" | jq -r '.prior // empty')"
+
+[[ -n "$r_bead" ]] || die "'$review' frontmatter has no 'bead'. Refusing."
+[[ "$r_verdict" == "FAIL" ]] || die "'$review' verdict must be FAIL to reopen a closed Bead (got '${r_verdict:-<unset>}'). A PASS never reopens."
+[[ "$r_spawn" == "fresh" ]] || die "'$review' is not attested 'spawn: fresh' (got '${r_spawn:-<unset>}'). A forked reviewer is refused; re-run with a fresh spawn."
+[[ -n "$r_prior" && "$r_prior" != "null" ]] || die "'$review' has no 'prior' — reopen requires the report citing the closing PASS report."
+
+raw="$(bd show --json "$r_bead" 2>/dev/null)" || die "'bd show --json $r_bead' failed. Confirm the id in '$review' frontmatter, then re-run."
+bead="$(printf '%s' "$raw" | jq '.[0]')"
+[[ "$bead" != "null" && -n "$bead" ]] || die "no Bead '$r_bead' in the database."
+
+b_status="$(printf '%s' "$bead" | jq -r '.status')"
+[[ "$b_status" == "closed" ]] || die "Bead $r_bead is not closed (status=$b_status). Reopen only applies to a closed Bead."
+
+close_reason="$(printf '%s' "$bead" | jq -r '.close_reason // ""')"
+[[ "$close_reason" == accepted\ * ]] || die "Bead $r_bead's close_reason does not start with 'accepted ' (got '${close_reason:-<empty>}'). Refusing."
+closing_report="${close_reason#accepted }"
+[[ "$r_prior" == "$closing_report" ]] \
+  || die "'$review' 'prior' ('$r_prior') does not match the closing PASS report recorded in close_reason ('$closing_report'). Refusing."
+
+b_executor="$(printf '%s' "$bead" | jq -r '.metadata.executor.model // ""')"
+[[ -n "$b_executor" ]] || die "Bead $r_bead has no metadata 'executor.model'. Refusing — the tier rule cannot be evaluated."
+eb_model_valid "$r_model" || die "'$review' reviewer.model '$r_model' is not on the ladder (haiku|sonnet|opus|fable)."
+executor_rank="$(eb_model_rank "$b_executor")" || die "Bead $r_bead metadata executor.model '$b_executor' is not on the ladder. Refusing."
+reviewer_rank="$(eb_model_rank "$r_model")" || die "internal: bad reviewer model '$r_model'."
+top_rank="$(eb_model_rank fable)"
+if [[ "$executor_rank" == "$top_rank" ]]; then
+  (( reviewer_rank >= executor_rank )) || die "reviewer '$r_model' does not outrank executor '$b_executor'. Refusing."
+else
+  (( reviewer_rank > executor_rank )) || die "reviewer '$r_model' does not outrank executor '$b_executor' on the ladder. Refusing."
+fi
+
+bd reopen "$r_bead" --reason "reopened per FAIL review $review, prior $r_prior" >/dev/null \
+  || die "'bd reopen $r_bead' failed. Fix the reported cause, then re-run; nothing else was changed."
+
+"$SCRIPT_DIR/bead-progress.sh" --id "$r_bead" \
+  --completed "(none)" \
+  --in-progress "reopened on a FAIL review" \
+  --next "$review" \
+  || die "the Bead was reopened but the rule-5 NEXT rewrite failed. Run: $SCRIPT_DIR/bead-progress.sh --id $r_bead --next '$review'"
+
+printf 'REOPENED\n'
