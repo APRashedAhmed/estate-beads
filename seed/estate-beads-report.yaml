@@ -14,27 +14,21 @@
 # Schema and field meanings: checkpointing/skills/save-checkpoint/SKILL.md
 # "The registry" (lines 27-53) and scripts/ckpt-participants.sh's validation.
 #
-# KNOWN GAP (see scripts/eb-closeout-report.sh's own header): a `kind: shell`
-# participant's `run:` line is executed verbatim via Bash with NO per-run
-# values from the dispatcher (ckpt-participants.sh v1; the same limitation
-# ~/.claude/checkpoint.d/at-checkpoint-saved.yml's header documents for
-# outcome/participant_count). The archived handoff path this participant needs
-# is therefore NOT available to it today. The `run:` line below reads it from
-# $CKPT_HANDOFF_PATH, which no current dispatcher version sets — until it does,
-# every real closeout logs this participant's failure (naming the gap) in the
-# health surface (step 7 of save-checkpoint's procedure), rather than silently
-# skipping the Beads. Recorded as a checkpointing follow-up in reviews/u5-batch.md.
+# CKPT_HANDOFF_PATH: checkpointing main's ckpt-participants.sh now prefixes a `kind: shell`
+# participant's `run:` line with `CKPT_HANDOFF_PATH=<path>` on a closeout event
+# (ckpt-participants.sh:233) — the gap recorded in reviews/u5-batch.md is closed.
 id: estate-beads-report
 kind: shell
-# Resolves estate-beads' installed path the way design §12.4 specifies for
-# every cross-plugin consumer (~/.claude/plugins/installed_plugins.json
-# .plugins["estate-beads@homelab-plugins"].installPath, never a commit sha),
-# falling back to the workspace sibling for a dev checkout. NOT via
-# bin/eb-root.sh: that helper's script-relative fallback needs an absolute
-# path to itself already in hand, which is exactly what this line is
-# bootstrapping from a totally external shell (the operator's live session),
-# so it cannot be the bootstrap step here.
-run: "P=$(jq -r '(.plugins[\"estate-beads@homelab-plugins\"] // empty) | (if type==\"array\" then .[-1] else . end).installPath // empty' ~/.claude/plugins/installed_plugins.json 2>/dev/null); [ -n \"$P\" ] || P=\"${SEAT_ROOT:-$HOME/heliopolis}/engineering/agentic/plugins/estate-beads\"; bash \"$P/scripts/eb-closeout-report.sh\" \"${CKPT_HANDOFF_PATH:-}\""
+# Resolves estate-beads' installed path the way design §12.4 specifies for every cross-plugin
+# consumer (installed_plugins.json .plugins["estate-beads@homelab-plugins"].installPath, never a
+# commit sha), preferring a "user"-scope record over any other (m5, review pa-s2s.8-review-1 —
+# mirrors bin/eb-root.sh's own `_registry_root` selection, `(map(select(.scope=="user")) + .)[0]`,
+# rather than `.[-1]`), honouring ${CLAUDE_CONFIG_DIR:-~/.claude} (m5), and falling back to the
+# workspace sibling for a dev checkout. NOT via bin/eb-root.sh: that helper's script-relative
+# fallback needs an absolute path to itself already in hand, which is exactly what this line is
+# bootstrapping from a totally external shell (the operator's live session), so it cannot be the
+# bootstrap step here.
+run: "J=\"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json\"; P=$(jq -r '(.plugins[\"estate-beads@homelab-plugins\"] // []) | (map(select(.scope == \"user\")) + .)[0].installPath // empty' \"$J\" 2>/dev/null); [ -n \"$P\" ] || P=\"${SEAT_ROOT:-$HOME/heliopolis}/engineering/agentic/plugins/estate-beads\"; bash \"$P/scripts/eb-closeout-report.sh\" \"${CKPT_HANDOFF_PATH:-}\""
 order: 40
 # on: closeout only — this participant reports Beads at the end of a
 # work-unit, never on an ordinary mid-session checkpoint refresh.

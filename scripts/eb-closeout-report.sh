@@ -34,7 +34,7 @@ die() { printf '%s: %s\n' "$SELF" "$1" >&2; exit "${2:-1}"; }
 source "$SCRIPT_DIR/lib/eb-common.sh"
 
 handoff="${1:-${CKPT_HANDOFF_PATH:-}}"
-[[ -n "$handoff" ]] || die "no handoff path given (\$1 or \$CKPT_HANDOFF_PATH). The checkpoint dispatcher's ckpt-participants.sh v1 passes shell participants no per-run values (see the header comment in this file); until it does, invoke this script directly with the archived handoff path."
+[[ -n "$handoff" ]] || die "no handoff path given (\$1 or \$CKPT_HANDOFF_PATH). The dispatcher (ckpt-participants.sh) sets \$CKPT_HANDOFF_PATH on a closeout event; either it did not run this as a closeout participant, or you invoked this script directly without the archived handoff path — give one."
 [[ -f "$handoff" ]] || die "no file at '$handoff'."
 command -v jq >/dev/null || die "jq not on PATH. Install jq, then re-run."
 
