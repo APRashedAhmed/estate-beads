@@ -1,0 +1,12 @@
+{
+  "id": "row24-update-append-notes-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd update t-1 --append-notes \"hi\""
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "bead-progress.sh"
+}

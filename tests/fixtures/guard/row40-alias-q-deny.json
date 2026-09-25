@@ -1,0 +1,12 @@
+{
+  "id": "row40-alias-q-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd q \"x\""
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "create-bead.sh"
+}

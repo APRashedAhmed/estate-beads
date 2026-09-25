@@ -1,0 +1,12 @@
+{
+  "id": "row31-raw-create-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd create \"x\" --type task"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "create-bead.sh"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "row51-wrapper-xargs-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "echo pa-x | xargs bd close"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "bead-report-success.sh"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "row29-update-status-open-on-closed-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd update __CLOSED_ID__ --status open"
+  },
+  "cwd": "__SCRATCH_CWD__",
+  "expected": "deny",
+  "reason_contains": "bead-accept.sh"
+}

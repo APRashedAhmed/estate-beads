@@ -1,0 +1,12 @@
+{
+  "id": "row42-alias-short-status-space-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd update t-1 -s closed"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "bead-report-success.sh"
+}

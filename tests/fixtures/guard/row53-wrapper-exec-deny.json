@@ -1,0 +1,12 @@
+{
+  "id": "row53-wrapper-exec-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "exec bd close pa-x"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "bead-report-success.sh"
+}

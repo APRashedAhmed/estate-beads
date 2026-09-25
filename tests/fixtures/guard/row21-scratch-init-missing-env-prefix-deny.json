@@ -1,0 +1,12 @@
+{
+  "id": "row21-scratch-init-missing-env-prefix-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd init --skip-hooks --non-interactive --prefix t"
+  },
+  "cwd": "__NONGIT_CWD__",
+  "expected": "deny",
+  "reason_contains": "scratch form"
+}

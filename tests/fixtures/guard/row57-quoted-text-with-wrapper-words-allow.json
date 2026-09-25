@@ -1,0 +1,12 @@
+{
+  "id": "row57-quoted-text-with-wrapper-words-allow",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "echo \"if bd close pa-x; then timeout 5 bd close pa-x; fi\""
+  },
+  "cwd": "__CWD__",
+  "expected": "allow",
+  "reason_contains": ""
+}

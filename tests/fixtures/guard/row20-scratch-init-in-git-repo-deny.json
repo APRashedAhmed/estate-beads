@@ -1,0 +1,12 @@
+{
+  "id": "row20-scratch-init-in-git-repo-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "env -u BEADS_DIR bd init --skip-hooks --skip-agents --non-interactive --prefix t"
+  },
+  "cwd": "__GIT_CWD__",
+  "expected": "deny",
+  "reason_contains": "scratch form"
+}

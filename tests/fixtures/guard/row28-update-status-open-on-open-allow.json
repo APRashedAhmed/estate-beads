@@ -1,0 +1,12 @@
+{
+  "id": "row28-update-status-open-on-open-allow",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd update __OPEN_ID__ --status open"
+  },
+  "cwd": "__SCRATCH_CWD__",
+  "expected": "allow",
+  "reason_contains": ""
+}
