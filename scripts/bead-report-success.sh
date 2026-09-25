@@ -40,8 +40,14 @@ if [[ "$mode" == "evidence" ]]; then
   exit 0
 fi
 
+if [[ "$mode" == "independent" ]]; then
+  # design §13: accept:independent is review-accepted; the executor dispatches a fresh review
+  # and runs `bead-accept.sh --review <report>` on its verdict (contract §9 rule 9).
+  printf 'ACCEPTANCE-PENDING review\n'
+  exit 0
+fi
+
 case "$mode" in
-  independent) authority="an independent reviewer admitted to accept this work" ;;
   operator)    authority="the operator" ;;
   *)           authority="the authority named by accept:${mode}" ;;
 esac
