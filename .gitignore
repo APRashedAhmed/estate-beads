@@ -3,6 +3,10 @@
 # vendoring a nested repo) and runtime cruft — but NOT the whole .claude/, so the
 # repo can still ship dev-time skills/settings under .claude/.
 .claude/worktrees/
+# Same hazard for worktrees created at the repo root (vcr-worktree-onramp convention,
+# `.worktrees/<name>`) — untracked, and a nested checkout scripts/test.sh must skip via
+# git check-ignore, not vendor via a blanket `git add -A`.
+.worktrees/
 .claude/*.local.md
 .claude/scheduled_tasks.lock
 tmp.*
