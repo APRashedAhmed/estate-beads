@@ -146,6 +146,25 @@ else
   eb_bad "SessionEnd: 3 concurrent claims release within 1.5s on a scratch db" "took ${ELAPSED3_MS}ms"
 fi
 
+# --- 5c. B1 fix (review pa-s2s.8-review-1): a Bead carrying `acceptance-pending` survives
+#         SessionEnd -- it must stay in_progress, still assigned, still labeled, even though its
+#         assignee matches the ending session's actor -----------------------------------------
+BEAD9_JSON="$(BEADS_ACTOR=creator bd create "acceptance-pending survives sessionend" --type task -p 2 --json)"
+BEAD9_ID="$(printf '%s' "$BEAD9_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+SID_PENDING="66666666-6666-6666-6666-666666666666"
+BEADS_ACTOR="$SID_PENDING" bd update "$BEAD9_ID" --claim --json >/dev/null
+BEADS_ACTOR="$SID_PENDING" bd update "$BEAD9_ID" --append-notes "EVIDENCE: pending report" --json >/dev/null
+BEADS_ACTOR="$SID_PENDING" bd update "$BEAD9_ID" --add-label "acceptance-pending" --json >/dev/null
+
+bash "$END" <<<"$(sessionend_payload "$SID_PENDING")" >/dev/null
+
+STATUS_PENDING_AFTER="$(bd show --json "$BEAD9_ID" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["status"])')"
+ASSIGNEE_PENDING_AFTER="$(bd show --json "$BEAD9_ID" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0].get("assignee") or "")')"
+LABELS_PENDING_AFTER="$(bd show --json "$BEAD9_ID" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)[0].get("labels") or []))')"
+assert_eq "B1: an acceptance-pending Bead stays in_progress across SessionEnd" "in_progress" "$STATUS_PENDING_AFTER"
+assert_eq "B1: an acceptance-pending Bead keeps its assignee across SessionEnd" "$SID_PENDING" "$ASSIGNEE_PENDING_AFTER"
+assert_contains "B1: an acceptance-pending Bead keeps its label across SessionEnd" "$LABELS_PENDING_AFTER" "acceptance-pending"
+
 # --- 6. Both hooks no-op silently when BEADS_DIR does not resolve ------------------------------
 OUT_NODB="$(env -u BEADS_DIR bash "$START" <<<"$(sessionstart_payload "cccccccc-cccc-cccc-cccc-cccccccccccc")" 2>&1)"
 if printf '%s' "$OUT_NODB" | grep -q 'Beads Workflow Context'; then

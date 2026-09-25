@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # eb-session-end.sh — SessionEnd hook (design §11.2/§12.5, plan U3 decision 5).
 # Releases every claim whose assignee equals this session's actor (`<session_id>` or
-# `<session_id>/<agent_id>` per §12.5's encoding), with the note "claim released at session end".
+# `<session_id>/<agent_id>` per §12.5's encoding), with the note "claim released at session end" —
+# EXCEPT a Bead carrying the `acceptance-pending` label (contract §5.1 "awaiting acceptance" stays
+# in_progress by design; fix round 1 B1), which is left untouched.
 # Declared Claude-only in the capability matrix (design §12.8) — the seven-seam vocabulary has no
 # `session_ended` seam and is not amended (operator direction 2026-09-24).
 #
@@ -56,12 +58,22 @@ if isinstance(issues, dict):
 prefix = session_id + "/"
 for issue in issues:
     assignee = (issue or {}).get("assignee") or ""
-    if assignee == session_id or assignee.startswith(prefix):
-        # tab-separated: id, and the EXACT assignee string (bare session id, or
-        # session_id/agent_id) -- release must run as that same actor, or `bd update` refuses
-        # to reassign a live claim held by a different actor without --force.
-        bead_id = issue.get("id", "")
-        print(bead_id + "\t" + assignee)
+    if assignee != session_id and not assignee.startswith(prefix):
+        continue
+    # B1 fix (review pa-s2s.8-review-1): a Bead reported ACCEPTANCE-PENDING (contract §5.1
+    # "awaiting acceptance") stays in_progress on purpose -- releasing it here would put it
+    # back in `bd ready`, where another actor could claim and redo the work, and the eventual
+    # closer would then refuse it (both accept forms require status == in_progress AND the
+    # label). SessionEnd must never release a Bead carrying this label; skip it, the label's
+    # authority (bead-accept.sh / the operator) is the only thing that clears it.
+    labels = (issue or {}).get("labels") or []
+    if "acceptance-pending" in labels:
+        continue
+    # tab-separated: id, and the EXACT assignee string (bare session id, or
+    # session_id/agent_id) -- release must run as that same actor, or `bd update` refuses
+    # to reassign a live claim held by a different actor without --force.
+    bead_id = issue.get("id", "")
+    print(bead_id + "\t" + assignee)
 PYEOF
 )"
 
