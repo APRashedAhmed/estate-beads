@@ -8,7 +8,7 @@ source tests/_scratch_db.sh
 source tests/_assert.sh
 source tests/_review_fixture.sh
 
-eb_scratch_db scratch reopen
+eb_scratch_db scratch reopen || exit 1
 trap 'rm -rf "$scratch"' EXIT
 export BEADS_ACTOR=actor1
 REPORTS="$scratch/reports"; mkdir -p "$REPORTS"
@@ -48,5 +48,26 @@ id3="$(scripts/create-bead.sh --title "NotClosed" --description d --acceptance a
 notclosed="$REPORTS/not-closed.md"; eb_write_review "$notclosed" "$id3" FAIL opus fresh "$pass"
 out="$(scripts/bead-reopen.sh --review "$notclosed" 2>&1)"; rc=$?
 assert_rc "reopen refuses a Bead that is not closed" 1 "$rc"
+
+# --- reviewer below the executor's tier is refused (MINOR-3, review pa-s2s.3-review-1) ------------
+id4="$(scripts/create-bead.sh --title "ReopenTierBelow" --description d --acceptance a --project p --accept independent --recognized-by x)"
+scripts/bead-claim.sh --id "$id4" --model opus >/dev/null
+scripts/bead-report-success.sh --id "$id4" --evidence "initial" >/dev/null
+# Close it with a reviewer that outranks the opus executor (opus is not top-tier, so a same-tier
+# reviewer would itself be refused — use fable to get a clean close before exercising reopen).
+pass4="$REPORTS/pass4.md"; eb_write_review "$pass4" "$id4" PASS fable fresh ""
+scripts/bead-accept.sh --review "$pass4" >/dev/null
+tierbelow="$REPORTS/tier-below.md"; eb_write_review "$tierbelow" "$id4" FAIL sonnet fresh "$pass4"
+out="$(scripts/bead-reopen.sh --review "$tierbelow" 2>&1)"; rc=$?
+assert_rc "a reviewer below the executor is refused on reopen" 1 "$rc"
+bead4="$(bd show --json "$id4" 2>/dev/null | jq -c '.[0]')"
+assert_eq "the refused reopen leaves the Bead closed" "closed" "$(printf '%s' "$bead4" | jq -r '.status')"
+
+# --- a non-fresh ('spawn: fork') review is refused on reopen ---------------------------------------
+notfresh="$REPORTS/not-fresh.md"; eb_write_review "$notfresh" "$id4" FAIL fable fork "$pass4"
+out="$(scripts/bead-reopen.sh --review "$notfresh" 2>&1)"; rc=$?
+assert_rc "a non-fresh ('spawn: fork') review is refused on reopen" 1 "$rc"
+bead4b="$(bd show --json "$id4" 2>/dev/null | jq -c '.[0]')"
+assert_eq "the refused non-fresh reopen leaves the Bead closed" "closed" "$(printf '%s' "$bead4b" | jq -r '.status')"
 
 eb_report

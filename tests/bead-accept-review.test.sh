@@ -11,7 +11,7 @@ source tests/_scratch_db.sh
 source tests/_assert.sh
 source tests/_review_fixture.sh
 
-eb_scratch_db scratch accept-review
+eb_scratch_db scratch accept-review || exit 1
 trap 'rm -rf "$scratch"' EXIT
 export BEADS_ACTOR=actor1
 REPORTS="$scratch/reports"; mkdir -p "$REPORTS"

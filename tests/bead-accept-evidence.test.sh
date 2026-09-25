@@ -7,7 +7,7 @@ cd "$ROOT"
 source tests/_scratch_db.sh
 source tests/_assert.sh
 
-eb_scratch_db scratch accept-evidence
+eb_scratch_db scratch accept-evidence || exit 1
 trap 'rm -rf "$scratch"' EXIT
 export BEADS_ACTOR=actor1
 

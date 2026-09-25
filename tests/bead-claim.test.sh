@@ -7,7 +7,7 @@ cd "$ROOT"
 source tests/_scratch_db.sh
 source tests/_assert.sh
 
-eb_scratch_db scratch bead-claim
+eb_scratch_db scratch bead-claim || exit 1
 trap 'rm -rf "$scratch"' EXIT
 export BEADS_ACTOR=actor1
 
@@ -43,6 +43,13 @@ assert_rc "an undetectable model with no --model refuses the claim" 1 "$rc"
 assert_contains "the refusal names the --model remedy" "$out" "--model"
 status4="$(bd show --json "$id4" 2>/dev/null | jq -r '.[0].status')"
 assert_eq "the refused Bead was never claimed" "open" "$status4"
+
+# --- --model overrides a DETECTED (not just absent) model (MINOR-2, review pa-s2s.3-review-1) ---
+id5="$(scripts/create-bead.sh --title "ModelDetectedButOverridden" --description d --acceptance a --project p --accept evidence --recognized-by x)"
+EB_MODEL_ORACLE="$ROOT/tests/fixtures/fake-ua-model-oracle.sh" EB_MODEL_ORACLE_FAMILY=sonnet \
+  scripts/bead-claim.sh --id "$id5" --model haiku >/dev/null
+got5="$(bd show --json "$id5" 2>/dev/null | jq -r '.[0].metadata.executor.model')"
+assert_eq "--model (haiku) overrides a detected 'ok' oracle family (sonnet)" "haiku" "$got5"
 
 # --- an oracle in a non-ok state (stale/absent) is treated as undetectable, never guessed --------
 cat > "$scratch/stale-oracle.sh" <<'EOF'
