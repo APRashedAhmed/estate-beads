@@ -13,6 +13,15 @@ ran=0
 in_git_repo=0
 git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 && in_git_repo=1
 
+# --- claude plugin validate (warnings OK; only a non-zero exit is a failure) ------------
+echo "## validate: claude plugin validate ."
+if command -v claude >/dev/null 2>&1; then
+  ran=1
+  claude plugin validate . || fail=1
+else
+  echo "(claude CLI not found — skipping plugin validate)"
+fi
+
 while IFS= read -r t; do
   [ -n "$t" ] || continue
   if [ "$in_git_repo" -eq 1 ] && git -C "$ROOT" check-ignore -q "$t" 2>/dev/null; then continue; fi
