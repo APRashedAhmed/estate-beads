@@ -27,21 +27,18 @@ raw="$(bd show --json "$id")" || die "'bd show --json $id' failed. Confirm the i
 bead="$(printf '%s' "$raw" | jq '.[0]')"
 [[ "$bead" != "null" && -n "$bead" ]] || die "no Bead '$id' in the database. Confirm the id, then re-run."
 
-# Read the rule-5 progress block so COMPLETED/NEXT survive the release; only IN-PROGRESS carries
-# the release note (bead-progress.sh always rewrites all three lines — never append).
+# Read the rule-5 progress block so NEXT survives the release; bead-progress.sh --preserve keeps
+# COMPLETED/workunit/other lines verbatim and only IN-PROGRESS carries the release note.
 notes="$(printf '%s' "$bead" | jq -r '.notes // ""')"
-completed="$(printf '%s' "$notes" | awk -F': ' '/^COMPLETED: /{sub(/^COMPLETED: /,""); print; exit}')"
 next="$(printf '%s' "$notes" | awk -F': ' '/^NEXT: /{sub(/^NEXT: /,""); print; exit}')"
-[[ -n "$completed" ]] || completed="(none)"
-[[ -n "$next"      ]] || next="(none — released before a next step was recorded)"
+[[ -n "$next" ]] || next="(none — released before a next step was recorded)"
 
 bd update "$id" --status open --assignee "" >/dev/null \
   || die "'bd update $id --status open --assignee \"\"' failed. Fix the reported cause, then re-run; nothing was changed."
 
-"$SCRIPT_DIR/bead-progress.sh" --id "$id" \
-  --completed "$completed" \
+"$SCRIPT_DIR/bead-progress.sh" --id "$id" --preserve \
   --in-progress "released: ${note}" \
   --next "$next" \
-  || die "the claim was released but the rule-5 note failed to write. Run: $SCRIPT_DIR/bead-progress.sh --id $id --completed '$completed' --in-progress 'released: $note' --next '$next'"
+  || die "the claim was released but the rule-5 note failed to write. Run: $SCRIPT_DIR/bead-progress.sh --id $id --preserve --in-progress 'released: $note' --next '$next'"
 
 printf 'RELEASED\n'

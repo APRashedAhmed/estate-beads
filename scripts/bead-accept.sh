@@ -36,19 +36,15 @@ bead_json() {  # <id> -> the bead object on stdout
   printf '%s' "$b"
 }
 
-release_and_halt() {  # <id> <halt-label> <next-line> <halt-token-suffix>
+release_and_halt() {  # <id> <halt-label> <next-line>
   local id="$1" label="$2" next="$3"
-  local bead completed
-  bead="$(bead_json "$id")" || die "'bd show --json $id' failed mid-halt."
-  completed="$(printf '%s' "$bead" | jq -r '(.notes // "") | split("\n") | map(select(startswith("COMPLETED: "))) | last // "COMPLETED: (none)"' | sed 's/^COMPLETED: //')"
-  [[ -n "$completed" ]] || completed="(none)"
   bd update "$id" --status open --assignee "" >/dev/null \
     || die "halt release ('bd update $id --status open --assignee \"\"') failed; nothing else was changed."
   bd update "$id" --add-label "$label" >/dev/null \
     || die "the claim was released but adding label '$label' failed. Run: bd update $id --add-label $label"
-  "$SCRIPT_DIR/bead-progress.sh" --id "$id" --completed "$completed" \
+  "$SCRIPT_DIR/bead-progress.sh" --id "$id" --preserve \
     --in-progress "released: $label" --next "$next" \
-    || die "the halt landed but the rule-5 note failed to write. Run: $SCRIPT_DIR/bead-progress.sh --id $id --completed '$completed' --in-progress 'released: $label' --next '$next'"
+    || die "the halt landed but the rule-5 note failed to write (COMPLETED/workunit/other lines were meant to be preserved). Run: $SCRIPT_DIR/bead-progress.sh --id $id --preserve --in-progress 'released: $label' --next '$next'"
 }
 
 # =============================================================================================
@@ -194,11 +190,10 @@ case "$r_verdict" in
       release_and_halt "$r_bead" "halt:budget" "$review"
       printf 'HALTED\n'
     else
-      "$SCRIPT_DIR/bead-progress.sh" --id "$r_bead" \
-        --completed "$(printf '%s' "$bead" | jq -r '(.notes // "") | split("\n") | map(select(startswith("COMPLETED: "))) | last // "COMPLETED: (none)"' | sed 's/^COMPLETED: //')" \
+      "$SCRIPT_DIR/bead-progress.sh" --id "$r_bead" --preserve \
         --in-progress "review FAILED; see findings" \
         --next "$review" \
-        || die "budget was decremented but the rule-5 NEXT rewrite failed. Run: $SCRIPT_DIR/bead-progress.sh --id $r_bead --next '$review' (preserving COMPLETED/IN-PROGRESS)."
+        || die "budget was decremented but the rule-5 NEXT rewrite failed. Run: $SCRIPT_DIR/bead-progress.sh --id $r_bead --preserve --in-progress 'review FAILED; see findings' --next '$review' (preserving COMPLETED/workunit/other lines)."
       printf 'FAILED %s\n' "$cycles_after"
     fi
     ;;
