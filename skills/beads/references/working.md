@@ -56,9 +56,11 @@ only what survives as judgment; the guard's own deny message carries the rest.
    - `accept:operator` → prints `ACCEPTANCE-PENDING operator` and stops. On the operator's
      say-so in chat (design §11.6), the agent — in that later session, since the ruling always
      arrives after this one ends — runs
-     `scripts/bead-accept.sh --id <id> --evidence '<the operator's message, cited>'`, which
-     prints `CLOSED`. This is the SAME `--id --evidence` form `accept:evidence` uses; the
-     evidence cited is the operator's own words, not a file.
+     `scripts/bead-accept.sh --id <id> --evidence '<the operator's message, cited>' --operator`,
+     which prints `CLOSED`. This is the SAME `--id --evidence` form `accept:evidence` uses, plus
+     the required `--operator` flag (the form refuses an `accept:operator` Bead without it, and
+     never accepts `--operator` for `accept:independent` — that mode always requires
+     `--review <report>`); the evidence cited is the operator's own words, not a file.
    - `accept:independent` → prints `ACCEPTANCE-PENDING review`. Spawn a fresh auditor one tier above
      your `executor.model` (same tier only when you are `fable`, the top of the ladder; never a
      fork — a forked reviewer shares the very context the review exists to check), with
@@ -75,7 +77,11 @@ only what survives as judgment; the guard's own deny message carries the rest.
 
    Either closer form may run from a session other than the one that claimed the Bead — the
    claiming session's session id stays the recorded `assignee` (the audit trail of who did the
-   work); the closer's own actor is recorded in a `closed by <actor>` note line when it differs.
+   work); `bd` records no closer-actor field of its own (verified: `bd show --json`/`--long` and
+   `bd history --json` all show "beads" as the committer, never the actor who ran `bd close`), so
+   when the closer's actor differs it is recorded parenthetically inside the same `EVIDENCE:`
+   line — `EVIDENCE: <path> (closed by <actor>)` — never a second, free-text note line (rule 5
+   sanctions only the one append).
 
    A later FAIL review citing the closing PASS report reopens a closed Bead through
    `scripts/bead-reopen.sh --review <report>`, which prints `REOPENED`.

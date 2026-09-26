@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# bead-accept.sh --id --evidence <path> (design §11.4): requires acceptance-pending, sets
-# close_reason, closes — exercised on each accept: mode (the form itself does not gate on mode).
+# bead-accept.sh --id --evidence <path> [--operator] (design §11.4): requires acceptance-pending,
+# sets close_reason, closes. N2 (fix round 2, review pa-s2s.8-review-2): the form GATES on the
+# Bead's accept: mode — evidence closes as before; operator requires the explicit --operator flag
+# (refuses without it); independent is refused outright, naming --review <report>.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -11,26 +13,56 @@ eb_scratch_db scratch accept-evidence || exit 1
 trap 'rm -rf "$scratch"' EXIT
 export BEADS_ACTOR=actor1
 
-for mode in evidence independent operator; do
-  id="$(scripts/create-bead.sh --title "Evi-$mode" --description d --acceptance a --project p --accept "$mode" --recognized-by x)"
+make_pending() {  # <title> <mode> -> prints the Bead id, already acceptance-pending
+  local title="$1" mode="$2" id
+  id="$(scripts/create-bead.sh --title "$title" --description d --acceptance a --project p --accept "$mode" --recognized-by x)"
   scripts/bead-claim.sh --id "$id" --model sonnet >/dev/null
-  if [[ "$mode" == "evidence" ]]; then
-    # accept:evidence closes itself inside bead-report-success.sh — put it into
-    # acceptance-pending directly to exercise bead-accept.sh --evidence as its own path.
-    bd update "$id" --append-notes "EVIDENCE: initial report" >/dev/null
-    bd update "$id" --add-label "acceptance-pending" >/dev/null
-  else
-    scripts/bead-report-success.sh --id "$id" --evidence "initial report" >/dev/null
-  fi
-  out="$(scripts/bead-accept.sh --id "$id" --evidence "$scratch/evidence-$mode.txt")"; rc=$?
-  assert_eq "bead-accept --evidence closes an acceptance-pending Bead ($mode)" "CLOSED" "$out"
-  assert_rc "exits 0 ($mode)" 0 "$rc"
-  bead="$(bd show --json "$id" 2>/dev/null | jq -c '.[0]')"
-  assert_eq "status is closed ($mode)" "closed" "$(printf '%s' "$bead" | jq -r '.status')"
-  assert_contains "close_reason starts with 'accepted ' ($mode)" "$(printf '%s' "$bead" | jq -r '.close_reason')" "accepted $scratch/evidence-$mode.txt"
-  labels="$(printf '%s' "$bead" | jq -c '.labels')"
-  assert_ne "acceptance-pending was removed on close ($mode)" '["accept:'"$mode"'","acceptance-pending","class:bounded-increment","project:p"]' "$labels"
-done
+  bd update "$id" --append-notes "EVIDENCE: initial report" >/dev/null
+  bd update "$id" --add-label "acceptance-pending" >/dev/null
+  printf '%s' "$id"
+}
+
+# --- accept:evidence closes with no flag, as before -----------------------------------------------
+id="$(make_pending "Evi-evidence" evidence)"
+out="$(scripts/bead-accept.sh --id "$id" --evidence "$scratch/evidence-evidence.txt")"; rc=$?
+assert_eq "bead-accept --evidence closes an acceptance-pending Bead (evidence)" "CLOSED" "$out"
+assert_rc "exits 0 (evidence)" 0 "$rc"
+bead="$(bd show --json "$id" 2>/dev/null | jq -c '.[0]')"
+assert_eq "status is closed (evidence)" "closed" "$(printf '%s' "$bead" | jq -r '.status')"
+assert_contains "close_reason starts with 'accepted ' (evidence)" "$(printf '%s' "$bead" | jq -r '.close_reason')" "accepted $scratch/evidence-evidence.txt"
+labels="$(printf '%s' "$bead" | jq -c '.labels')"
+assert_ne "acceptance-pending was removed on close (evidence)" '["accept:evidence","acceptance-pending","class:bounded-increment","project:p"]' "$labels"
+
+# --- accept:operator refuses WITHOUT --operator, closes WITH it (N2) -----------------------------
+id="$(make_pending "Evi-operator" operator)"
+before="$(bd show --json "$id" 2>/dev/null | jq -c '.[0]')"
+out="$(scripts/bead-accept.sh --id "$id" --evidence "$scratch/evidence-operator.txt" 2>&1)"; rc=$?
+assert_rc "accept:operator refuses without --operator" 1 "$rc"
+assert_contains "the refusal names --operator" "$out" "--operator"
+after="$(bd show --json "$id" 2>/dev/null | jq -c '.[0]')"
+assert_eq "a refused close (no --operator) changes nothing" \
+  "$(printf '%s' "$before" | jq -c '{status, labels, notes}')" \
+  "$(printf '%s' "$after" | jq -c '{status, labels, notes}')"
+
+out="$(scripts/bead-accept.sh --id "$id" --evidence "$scratch/evidence-operator.txt" --operator)"; rc=$?
+assert_eq "accept:operator closes WITH --operator" "CLOSED" "$out"
+assert_rc "exits 0 (operator, --operator given)" 0 "$rc"
+bead="$(bd show --json "$id" 2>/dev/null | jq -c '.[0]')"
+assert_eq "status is closed (operator)" "closed" "$(printf '%s' "$bead" | jq -r '.status')"
+
+# --- accept:independent is refused outright, naming --review (N2) --------------------------------
+id="$(make_pending "Evi-independent" independent)"
+before="$(bd show --json "$id" 2>/dev/null | jq -c '.[0]')"
+out="$(scripts/bead-accept.sh --id "$id" --evidence "$scratch/evidence-independent.txt" 2>&1)"; rc=$?
+assert_rc "accept:independent is refused by the --id --evidence form" 1 "$rc"
+assert_contains "the refusal names --review <report>" "$out" "--review"
+after="$(bd show --json "$id" 2>/dev/null | jq -c '.[0]')"
+assert_eq "a refused independent close changes nothing" \
+  "$(printf '%s' "$before" | jq -c '{status, labels, notes}')" \
+  "$(printf '%s' "$after" | jq -c '{status, labels, notes}')"
+# --operator does not override the independent refusal either.
+out="$(scripts/bead-accept.sh --id "$id" --evidence "$scratch/evidence-independent.txt" --operator 2>&1)"; rc=$?
+assert_rc "accept:independent is refused even with --operator" 1 "$rc"
 
 # --- refuses when not acceptance-pending ---------------------------------------------------------
 notpending="$(scripts/create-bead.sh --title "NotPending" --description d --acceptance a --project p --accept evidence --recognized-by x)"
