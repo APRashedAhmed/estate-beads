@@ -16,22 +16,19 @@ Beads work-tracking for the estate: create, claim, report, accept, release and g
   `scripts/eb-session-end.sh`. See the support matrix below.
 
 ## Dependencies
-Stdlib-only. <!-- list any non-stdlib runtime dependency here; prefer stdlib-only -->
+PyYAML (`python3 -c 'import yaml'`), used by `scripts/lib/frontmatter.py` (review-report
+frontmatter) and `scripts/lib/batch.py` (batch-authoring artifact parsing). Everything else is
+stdlib-only.
 
 ## Telemetry
 This plugin emits no telemetry.
-<!-- If it emits events via the agentic-telemetry facade (emit_event), list each event + when it
-     fires in a table here, vendor the catalog as registry.d/<prefix>.yml, and deposit it from
-     install.sh. Re-scaffold with --with-telemetry to generate that structure. See
-     guidelines/telemetry-contract.md and the usage-aware-execution exemplar. -->
 
 ## Decisions
 Architecture decisions live in `decisions/` (managed by adr-tools — `adr new` to add one,
 `adr check` runs at pre-commit). Plans/specs/audits/learnings go to the plugin's PerAnkh folder.
 
 ## Conventions
-- Namespace prefix for state files / launchers: `eb-`; for env vars (uppercase): `EB_`
-  (shorten it if `estate-beads` is long — keep it collision-safe in shared `~/.claude/state/`).
+- Namespace prefix for state files / launchers: `eb-`; for env vars (uppercase): `EB_` — collision-safe in shared `~/.claude/state/`.
 - Versioning: no `version` field; commit-SHA drives updates. Annotated git tags
   (`git tag -a vX.Y`) are the human-readable release anchors. No CHANGELOG.md.
 - Provider shape: this repo is authored **Claude-shape-canonical** — `skills/`, `agents/`,
@@ -62,11 +59,11 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
 | `session_opened` (`SessionStart` → `bd prime` + `BEADS_ACTOR` export + advisory crash sweep) | Observe (records/exports; rejects nothing) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | advisory | fail-open | `tests/eb-session.test.sh` |
 | `before_mutation` (`PreToolUse(Bash)` → `scripts/eb-guard.py`, the `bd` verb guard) | Prevent (governed seam, fails closed on a recognized `bd` invocation the tokenizer cannot parse) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | governed | deny | `tests/eb-guard.test.sh`, `tests/fixtures/guard/*.json` |
 | `SessionEnd` (release this session's claims) — **no seam in the seven-seam vocabulary**; not amended (design §12.8) | Observe (acts deterministically on this session's own claims; rejects nothing — the least-wrong of the six §3 values for a non-rejecting seam) | Not available — Claude-only exemption, Operator direction (2026-09-24), design §12.8 | advisory | fail-open | `tests/eb-session.test.sh` |
-| after_mutation | TODO | TODO | TODO | TODO | TODO — not built this unit |
-| subagent_admitted | TODO | TODO | TODO | TODO | TODO — not built this unit; see "Known gaps" (P5 FAIL) |
-| subagent_closed | TODO | TODO | TODO | TODO | TODO — not built this unit |
-| turn_closed | TODO | TODO | TODO | TODO | TODO — not built this unit |
-| config_changed | TODO | Not available — Claude-only event (§4) | TODO | TODO | TODO |
+| after_mutation | not used | not used | — | — | — |
+| subagent_admitted | not used | not used | — | — | see "Known gaps" (P5 FAIL) |
+| subagent_closed | not used | not used | — | — | — |
+| turn_closed | not used | not used | — | — | — |
+| config_changed | not used | Not available — Claude-only event (§4) | — | — | — |
 
 ## Known gaps
 
@@ -81,11 +78,55 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
   is only possible under an isolated settings source
   (`claude -p --setting-sources "" --settings <file>`), not in a normal session — this guard's
   scratch-form allow is inert against the live deny in the meantime.
-- **`bd` verb aliases (fix round 1, F1) — closed.** `done`→`close`, `new`/`q`→`create`,
+- **`bd` verb aliases (fix round 1, F1) — closed.** `done`→`close`, `new`/`q`/`create-form`→`create`,
   `note`→`update --append-notes`, and `-s`/`-s=`→`--status` are now canonicalized before judging
   (`scripts/eb-guard.py`'s `VERB_ALIASES` table) and denied with the same message as their
   canonical verb. `bd unclaim`/`bd reclaim`/`bd assign`/`bd set-state` remain genuinely allowed
   (adjacent claim/assign paths, not aliases of a denied verb) — not a gap.
+- **Close/create/delete by another route (fix round 2, M2) — closed.** `bd todo done <id>`
+  (→ close) and `bd todo add <title>` (→ create) are two-word verbs, judged on the token after
+  `todo`; bare `bd todo`/`bd todo list` stay allowed. `bd supersede`/`bd duplicate` (auto-close
+  their target — contract §5.4 has no sanctioned non-`accepted` close reason yet; operator ruling
+  pending), `bd batch`/`bd import` (reach close/create/update-status in one call), and
+  `bd prune`/`bd purge` (permanent delete) are denied outright, each with its own message; no
+  script wraps any of them. `bd forget` (the inverse of the already-denied `bd remember`) is
+  denied the same way.
+- **`bd <verb> --help`/`-h` (fix round 2, m2) — closed.** Allowed regardless of verb, but ONLY as
+  the first token after the verb (`bd close --help` allows; `bd close pa-x --reason -h` still
+  denies — `-h` there is a flag value, not a help request).
+- **Heredoc body with an apostrophe (fix round 2, m2) — closed.** A heredoc BODY line that fails
+  `shlex` (ordinary prose like `fix: don't ...`) no longer fails the WHOLE command closed; only
+  that body degrades to a per-line first-token check (`cat <<EOF\nbd close ...\nEOF` still
+  denies; a commit message merely containing the word "bd" does not).
+- **`env -S`/`--split-string` (fix round 2, m3/N5) — closed.** `env -S 'bd close x'` recurses
+  into the split string the same way `bash -c`/`eval` do, and this now resolves `env` even after
+  a wrapper prefix (`sudo env -S 'bd close x'` — fix round 2, N5: the wrapper-skip that lands on
+  `env` no longer also consumes `env`'s own `-S value`, so its flags stay visible to the check
+  that reads them).
+- **Command-position variable indirection (fix round 2, N3) — narrowed, not blanket.** A
+  command-position `$VAR`/`${VAR}` denies ONLY when a `VAR=<literal>` assignment elsewhere in the
+  same command text resolves it to a token whose basename is `bd` (`B=bd; $B close x`,
+  `B=b; ${B}d close x`) — judged through the same verb-dispatch table as any other `bd`
+  invocation once resolved, so the deny message names the actual verb. A `$( )`/backtick command
+  substitution in command position (`` $(command -v bd) close x ``) is never resolved this way
+  and is ALLOWED, same as an unresolved `$VAR` with no matching assignment
+  (`` "${CLAUDE_PLUGIN_ROOT}/scripts/bead-read.sh" --id x && bd show x ``,
+  `bd ready | "$HOME/bin/fmt"`, `$EDITOR bd-notes.md`) — this guard never blocks a command merely
+  because the word `bd` appears somewhere else in its text (a fix round 1 deviation from design
+  §12.1, reverted; see `pa-s2s.8-review-2` N3). The literal `VAR=<literal>` assignment table is
+  built from the top-level command text AND any shell-fed heredoc body (`bash <<EOF\nB=bd\n$B
+  close x\nEOF` denies). Remaining unlisted wrappers/indirection (`find … -exec bd close`,
+  `setsid`, `doas`, `su -c`, `python3 -c os.system(...)`, `$(command -v bd) close x`, a
+  parameter-expansion default like `${B:-bd} close x`, or an assignment that only becomes visible
+  after crossing a subshell/`bash -c` boundary — `export B=bd; bash -c '$B close x'`) are NOT
+  covered — same class as pa-s2s.4-review-2 N1, still a known gap.
+- **Heredoc consumer (fix round 2, N4) — closed.** A heredoc fed to a shell/evaluator (`bash`,
+  `sh`, `zsh`, `dash`, `ksh`, `eval`, `source`, `.`) executes its body as a command: a body line
+  `shlex` cannot parse (e.g. an apostrophe) now fails the WHOLE command closed when it still
+  mentions `bd`, so a prefixed/chained `bd` after an earlier unparseable line (`bash <<'EOF'\necho
+  it's\nsudo bd close x\nEOF`) can no longer slip past a first-token-only check. A heredoc fed to
+  anything else (`cat`, `tee`, a file) stays data: the per-line first-token degrade from fix round
+  1 (m2) still applies there (`cat <<'EOF'\nit's bd close time\nEOF` allows).
 - **Wrapper/keyword/shell-string commands (fix round 1, F2/F3) — closed.** Shell reserved words
   (`if`/`then`/`else`/`elif`/`do`/`while`/`until`/`!`/`{`/`time`) and wrappers with their own
   options/values (`timeout N`, `nohup`, `sudo [opts]`, `exec`, `command`, `nice [-n N]`,
@@ -110,6 +151,10 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
 - **Scratch-allow reachability, checked live:** `git -C $SEAT_ROOT/scratch rev-parse --git-dir`
   and `git -C $SEAT_ROOT rev-parse --git-dir` both report "not a git repository" — the scratch
   form's cwd-outside-git-repo check is satisfiable at the estate's actual scratch path.
+- **Guard inner `bd show` timeout (fix round 2, m4) — closed.** Was equal to the PreToolUse hook
+  timeout (10s); now `BD_SHOW_TIMEOUT = 5` in `scripts/eb-guard.py`, strictly under it, so a slow
+  `bd show` times out INSIDE the guard's own budget and fails closed (`deny`) rather than running
+  out the hook's whole budget and rendering no decision at all (portability-contract.md §7).
 - **`update --status open` id detection is the first non-flag token**, so a flag value that
   itself looks positional (e.g. an id-shaped `--if-assignee` value preceding the real id) could
   be misread as the id. The failure direction is safe (an unresolvable/wrong id makes `bd show`
@@ -151,11 +196,14 @@ are the residue the guard cannot mechanize.
 auditor one tier above the executor emits a verdict frontmatter block (`references/review-brief.md`
 is the fragment appended to its brief), and the executor's session runs
 `scripts/bead-accept.sh --review <report>` as the sole closer — the reviewer never mutates Bead
-state. Rule 9 in `references/working.md` carries the four stdout branches
-(`CLOSED | FAILED <cycles-left> | HALTED [<reason>] | INCOMPLETE`) verbatim from that script's
-decision vocabulary, so a change to the script's tokens is a breaking change to the skill's prose
-too. A fifth branch, `BLOCKED-BY <ids>` (exit 1), fires before any mutation when the Bead has open
-blockers; nothing changes and the caller re-runs once they close.
+state. Rule 9 in `references/working.md` carries this script's full stdout decision vocabulary
+verbatim (`CLOSED | ACCEPTANCE-PENDING <authority> | FAILED <cycles-left> | HALTED [<reason>] |
+INCOMPLETE | BLOCKED-BY <ids>`), so a change to the script's tokens is a breaking change to the
+skill's prose too (m6, fix round 2 residual — the README previously listed only four of the six).
+`ACCEPTANCE-PENDING <authority>` fires on a PASS against an `accept:operator` Bead — the review
+still leaves it awaiting the operator's say-so, never closing it directly. `BLOCKED-BY <ids>`
+(exit 1) fires before any mutation when the Bead has open blockers; nothing changes and the
+caller re-runs once they close.
 
 **Register.** SKILL.md is `function=procedure` (a router with two operative facts) and Navigation
 shape (~30 lines) rather than the plain-router size the label alone suggests.

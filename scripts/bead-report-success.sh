@@ -48,7 +48,9 @@ if [[ "$mode" == "independent" ]]; then
 fi
 
 case "$mode" in
-  operator)    authority="the operator" ;;
+  # contract §5.4 token is exactly "ACCEPTANCE-PENDING operator" (fix round 1, minor: was
+  # printing "ACCEPTANCE-PENDING the operator", which no emitter/consumer/test agreed on).
+  operator)    authority="operator" ;;
   *)           authority="the authority named by accept:${mode}" ;;
 esac
 printf 'ACCEPTANCE-PENDING %s\n' "$authority"

@@ -1,0 +1,12 @@
+{
+  "id": "row83-heredoc-shellfed-sudo-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bash <<'EOF'\nsudo bd close x\nEOF"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "bead-report-success.sh"
+}

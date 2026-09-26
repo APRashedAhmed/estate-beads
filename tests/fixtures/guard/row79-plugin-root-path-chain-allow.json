@@ -1,0 +1,11 @@
+{
+  "id": "row79-plugin-root-path-chain-allow",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/bead-read.sh\" --id x && bd show x"
+  },
+  "cwd": "__CWD__",
+  "expected": "allow"
+}

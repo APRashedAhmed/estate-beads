@@ -6,8 +6,15 @@
 #    session id. Independent of whether a Beads database is present.
 # 2. `bd prime --hook-json` + an ADVISORY crash-claim sweep, only when $BEADS_DIR resolves to an
 #    existing directory — silent (no stdout) otherwise. The sweep never releases anything; it
-#    only lists Beads claimed by a session whose transcript file is gone, naming
-#    scripts/bead-release.sh as the mechanism an operator/orchestrator runs.
+#    lists Beads claimed by a session whose transcript is MISSING, or present but older than
+#    ${EB_SESSION_START_SWEEP_STALE_HOURS:-6}h (M3, fix round 1 review pa-s2s.8-review-1 — a
+#    transcript persists long after its session ends, so presence alone is not a liveness
+#    signal), under ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/, naming scripts/bead-release.sh
+#    as the mechanism an operator/orchestrator runs. A Bead labeled `acceptance-pending` is
+#    EXCLUDED from that crashed-claim list (N1, fix round 2 review pa-s2s.8-review-2): it is
+#    awaiting acceptance, not abandoned, and SessionEnd already leaves it alone on purpose (B1).
+#    It gets its own, separate advisory naming scripts/bead-accept.sh (or bead-report-success.sh's
+#    review path) as the closer, never bead-release.sh.
 #
 # Both `bd prime --hook-json` and this hook's own output are the SAME SessionStart JSON envelope
 # (`{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext": "..."}}`) — the
@@ -45,13 +52,26 @@ LIST_JSON="$(bd list --status in_progress --json 2>/dev/null)"
 
 RELEASE_SCRIPT="$HERE/bead-release.sh"
 
-python3 - "$PRIME_JSON" "$RELEASE_SCRIPT" "$SESSION_ID" "$HOME" "$LIST_JSON" <<'PYEOF'
+# M3 (review pa-s2s.8-review-1): the sweep must honour ${CLAUDE_CONFIG_DIR:-$HOME/.claude} for
+# the transcript root, not a hardcoded $HOME/.claude — under this estate's per-account config
+# directories, the hardcoded path would flag every live session of another account as crashed.
+CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+# Liveness threshold: a transcript MISSING or older than this many hours reads as crashed
+# (design §11.2 "catches crashes"). A present-but-days-old transcript is exactly the case the
+# prior "missing only" check could not detect (transcripts persist ~30 days after a session
+# ends, so presence alone is not a liveness signal).
+STALE_HOURS="${EB_SESSION_START_SWEEP_STALE_HOURS:-6}"
+
+python3 - "$PRIME_JSON" "$RELEASE_SCRIPT" "$SESSION_ID" "$CONFIG_DIR" "$LIST_JSON" "$STALE_HOURS" <<'PYEOF'
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
-prime_raw, release_script, own_session_id, home, list_raw = sys.argv[1:6]
+prime_raw, release_script, own_session_id, config_dir, list_raw, stale_hours_raw = sys.argv[1:7]
+stale_seconds = float(stale_hours_raw) * 3600.0
+now = time.time()
 
 try:
     prime = json.loads(prime_raw)
@@ -73,6 +93,7 @@ SESSION_ID_RE = re.compile(
 )
 
 advisories = []
+pending_advisories = []
 for issue in issues:
     assignee = (issue or {}).get("assignee") or ""
     m = SESSION_ID_RE.match(assignee)
@@ -83,20 +104,48 @@ for issue in issues:
         # This session's own claims are not "dead" — and at `startup` this session's own
         # transcript file may not exist yet regardless.
         continue
-    transcripts = list(Path(home).glob(f".claude/projects/*/{sid}.jsonl"))
+    # M3/§12.5: liveness first, for EVERY candidate — the sweep only ever concerns claims held
+    # by a DEAD session; a Bead whose session is still live is not this sweep's business at all,
+    # whether or not it happens to carry acceptance-pending.
+    transcripts = list(Path(config_dir).glob(f"projects/*/{sid}.jsonl"))
     if transcripts:
-        continue  # a live transcript exists: not a crash, nothing to flag
+        # M3: presence alone is not a liveness signal — a transcript persists long after its
+        # session ends (measured: ~4300 transcripts on disk at review time, spanning ~30 days).
+        # Only a RECENTLY-touched transcript reads as live; an old one is a crash too.
+        newest_mtime = max(t.stat().st_mtime for t in transcripts)
+        if (now - newest_mtime) < stale_seconds:
+            continue  # a recently-live transcript exists: not a crash, nothing to flag
+        reason = f"transcript at {transcripts[0]} is stale (>{stale_hours_raw}h old)"
+    else:
+        reason = f"no transcript found at {config_dir}/projects/*/{sid}.jsonl"
+
+    labels = (issue or {}).get("labels") or []
+    if "acceptance-pending" in labels:
+        # N1 (fix round 2, review pa-s2s.8-review-2): a pending Bead held by a DEAD session is
+        # awaiting acceptance, not abandoned (B1 already leaves it alone at SessionEnd) — never
+        # list it as "looks crashed" and never point it at bead-release.sh, which the previous
+        # sweep did whenever its session's transcript also happened to look dead/stale.
+        pending_advisories.append(
+            f"- {issue.get('id')} is claimed by session {sid} and is acceptance-pending — "
+            "awaiting acceptance, not crashed. Do NOT release it; close it via "
+            "scripts/bead-accept.sh (or the --review form, per its accept: label)."
+        )
+        continue
+
     advisories.append(
-        f"- {issue.get('id')} is claimed by session {sid} (no transcript found at "
-        f"~/.claude/projects/*/{sid}.jsonl) — looks crashed. Advisory only: run "
-        f"`{release_script} --id {issue.get('id')} --note '<why>'` to release it; this hook "
-        f"never releases automatically."
+        f"- {issue.get('id')} is claimed by session {sid} ({reason}) — looks crashed. Advisory "
+        f"only: run `{release_script} --id {issue.get('id')} --note '<why>'` to release it; "
+        f"this hook never releases automatically."
     )
 
 out = prime
 hook_out = out.setdefault("hookSpecificOutput", {})
+extra = ""
 if advisories:
-    extra = "\n\n## estate-beads: possibly-crashed claims (advisory only, never auto-released)\n" + "\n".join(advisories) + "\n"
+    extra += "\n\n## estate-beads: possibly-crashed claims (advisory only, never auto-released)\n" + "\n".join(advisories) + "\n"
+if pending_advisories:
+    extra += "\n\n## estate-beads: acceptance-pending claims (not crashed; close via bead-accept.sh)\n" + "\n".join(pending_advisories) + "\n"
+if extra:
     hook_out["additionalContext"] = hook_out.get("additionalContext", "") + extra
 
 print(json.dumps(out))

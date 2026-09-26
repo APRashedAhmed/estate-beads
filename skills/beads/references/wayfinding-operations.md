@@ -35,13 +35,19 @@ overrides it. Vocabulary: the word is **Bead**; the tracker-generic noun is not 
   `--no-inherit-labels` with `--parent` (create-bead.sh:156-158), so nothing is inherited.
   Description is `## Question` and nothing else. Accept mode: OPERATOR Beads `accept:evidence` (the
   operator's live answer, recorded in the design note, is the evidence); AUTO Beads
-  `accept:independent` (the map holder accepts on next load).
+  `accept:independent` (review-based acceptance, contract §5.3/§9 rule 9: the map holder
+  dispatches a fresh reviewer per `references/review-brief.md` on `ACCEPTANCE-PENDING review`
+  and runs `bead-accept.sh --review <report>` on the verdict — it never accepts on its own say-so
+  by merely loading the Bead).
 - **Blocking**: native, `bd dep <blocker-id> --blocks <blocked-id>`; run `bd dep cycles` after a
   wiring pass. A Bead surfaced by resolving another also gets
   `bd dep add <new> <resolver> -t discovered-from`. Blocked-by is the live gate; `bd ready` reads it.
-- **Ready set**: `bd ready -l wf:<effort-slug> --json`. `bd ready` drops in-progress (claimed), blocked,
-  and deferred Beads (verified live 2026-09-24); the explicit effort label scopes it to this map. First
-  row wins unless the operator names a Bead.
+- **Ready set**: `bd ready -l wf:<effort-slug> --exclude-label wayfinder:out-of-scope --json`
+  (`bd ready --help`, verified live on bd 1.3.0: `--exclude-label` "Exclude issues that have ANY
+  of these labels" — needed because releasing an out-of-scope Bead returns it to `open`, which
+  `bd ready` would otherwise re-offer). `bd ready` drops in-progress (claimed), blocked, and
+  deferred Beads (verified live 2026-09-24); the explicit effort label scopes it to this map.
+  First row wins unless the operator names a Bead.
 - **Claim**: `${CLAUDE_PLUGIN_ROOT}/scripts/bead-claim.sh --id <id>` before any work. `CLAIMED` →
   proceed; `LOST` → take the next ready row. Never work an unclaimed Bead.
 - **Resolve (OPERATOR)**: 1. append the ruling to the design note's `## Decisions` as
@@ -52,8 +58,10 @@ overrides it. Vocabulary: the word is **Bead**; the tracker-generic noun is not 
 - **Resolve (AUTO research / task)**: write the report to `<workunit>/research/`, then
   `bead-report-success.sh --id <id> --evidence "<report path>"` → `ACCEPTANCE-PENDING <authority>`. For
   `accept:independent`, the map holder never closes it directly: it dispatches a fresh reviewer per
-  `review-brief.md` and runs `bead-accept.sh --review <report>` on the verdict — PASS closes it, FAIL
-  returns it to `open` with the findings path as NEXT. A finding is not a decision until accepted.
+  `review-brief.md` and runs `bead-accept.sh --review <report>` on the verdict — PASS closes it; FAIL
+  decrements the budget and REWRITES `NEXT:` to the findings path, but the Bead stays `in_progress`
+  (contract §5.3) — it returns to `open` only if the budget hits zero (`halt:budget`). A finding is
+  not a decision until accepted.
 - **Decisions so far**: not maintained by hand. It is
   `bd children <map-id> --json | jq '.[] | select(.status=="closed" and ((.labels|index("wayfinder:out-of-scope"))|not)) | {title, id, close_reason}'`
   read beside the design note's `## Decisions`.

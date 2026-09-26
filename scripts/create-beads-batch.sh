@@ -92,7 +92,14 @@ resolve_ref() {  # <kind> <value> -> id (real run) or key (dry-run/unresolved) o
 
 for i in $(seq 0 $((n_units - 1))); do
   u="$(printf '%s' "$plan" | jq -c ".units[$i]")"
-  key="$(printf '%s' "$u" | jq -r '.key')"
+  # m11 (review pa-s2s.8-review-1): batch.py emits `"key": null` for a keyless unit (§11.7
+  # title-fallback) — `// empty` turns that into "", never the literal string "null".
+  key="$(printf '%s' "$u" | jq -r '.key // empty')"
+  # bash disallows an empty string as an associative-array subscript ("bad array subscript") —
+  # a keyless unit is never a valid sibling parent/dep target (batch.py's sibling keyset holds
+  # only real keys), so this per-iteration fallback is never actually looked up by resolve_ref;
+  # it only needs to be a safe, unique bucket to write into.
+  map_key="${key:-__unkeyed_$i}"
   title="$(printf '%s' "$u" | jq -r '.title')"
   description="$(printf '%s' "$u" | jq -r '.description // ""')"
   [[ -n "$description" ]] || description="$title"
@@ -134,7 +141,11 @@ for i in $(seq 0 $((n_units - 1))); do
 
   argv=(create-bead.sh --title "$title" --description "$description" --acceptance "$acceptance"
         --project "$project" --accept "$accept" --recognized-by "$recognized_by"
-        --type "$btype" --key "$key")
+        --type "$btype")
+  # m11: a keyless unit (§11.7 title-fallback) passes no --key at all — create-bead.sh's own
+  # idempotency guard then falls back to its exact-title match, same as any single, non-batch
+  # `create-bead.sh` call with no --key.
+  [[ -n "$key"    ]] && argv+=(--key "$key")
   [[ -n "$tier"   ]] && argv+=(--tier "$tier")
   [[ -n "$effort" ]] && argv+=(--effort "$effort")
   [[ -n "$class"  ]] && argv+=(--class "$class")
@@ -160,7 +171,7 @@ for i in $(seq 0 $((n_units - 1))); do
     w_accept="accept:${accept}"
     w_class="class:${class:-bounded-increment}"
     if [[ "$e_title" == "$title" && "$e_accept" == "$w_accept" && "$e_class" == "$w_class" ]]; then
-      id_map["$key"]="$existing_id"
+      id_map["$map_key"]="$existing_id"
       printf '%s %s\n' "$key" "$existing_id"
     else
       hint=""
@@ -170,7 +181,7 @@ for i in $(seq 0 $((n_units - 1))); do
       printf 'EXISTS: %s\n' "$existing_id" >&2
       printf '%s: key "%s" drifted from the artifact: %s. Remedy: bd update %s to match the drifted field(s), or give the artifact unit a different --key if it names a different Bead.\n' \
         "$SELF" "$key" "${hint%%; }" "$existing_id" >&2
-      id_map["$key"]="$existing_id"
+      id_map["$map_key"]="$existing_id"
       printf '%s %s\n' "$key" "$existing_id"
     fi
     continue
@@ -190,7 +201,7 @@ for i in $(seq 0 $((n_units - 1))); do
   if [[ "$out" == EXISTS:\ * ]]; then
     new_id="${out#EXISTS: }"
   fi
-  id_map["$key"]="$new_id"
+  id_map["$map_key"]="$new_id"
   printf '%s %s\n' "$key" "$new_id"
 done
 

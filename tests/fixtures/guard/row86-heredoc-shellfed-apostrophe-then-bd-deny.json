@@ -1,0 +1,11 @@
+{
+  "id": "row86-heredoc-shellfed-apostrophe-then-bd-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bash <<'EOF'\necho it's\nsudo bd close pa-x\nEOF"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny"
+}

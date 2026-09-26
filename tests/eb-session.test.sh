@@ -16,6 +16,11 @@ source "$ROOT/tests/_scratch_db.sh"
 sessionstart_payload() {  # <session-id>
   printf '{"session_id":"%s","source":"startup","hook_event_name":"SessionStart"}' "$1"
 }
+
+# M3 (review pa-s2s.8-review-1): pin the transcript root this test's scratch HOME actually uses —
+# an inherited CLAUDE_CONFIG_DIR (this estate is per-account keyed) would make every fixture
+# transcript this suite writes under $HOME/.claude invisible to the sweep.
+unset CLAUDE_CONFIG_DIR
 sessionend_payload() {  # <session-id>
   printf '{"session_id":"%s","hook_event_name":"SessionEnd"}' "$1"
 }
@@ -97,6 +102,92 @@ assert_eq "sweep: dead claim's Bead stays in_progress (advisory only, never rele
   "in_progress" "$STATUS_DEAD_AFTER"
 rm -f "$ENVFILE2"
 
+# --- 4b. M3 (review pa-s2s.8-review-1): a PRESENT but STALE transcript (mtime older than the
+#         threshold) reads as crashed too, not just a missing one -----------------------------
+SID_STALE="eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+BEAD3B_JSON="$(BEADS_ACTOR=creator bd create "stale transcript sweep test" --type task -p 2 --json)"
+BEAD3B_ID="$(printf '%s' "$BEAD3B_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+BEADS_ACTOR="$SID_STALE" bd update "$BEAD3B_ID" --claim --json >/dev/null
+mkdir -p "$HOME/.claude/projects/fake-project"
+: > "$HOME/.claude/projects/fake-project/$SID_STALE.jsonl"
+touch -d '-7 hours' "$HOME/.claude/projects/fake-project/$SID_STALE.jsonl"
+
+ENVFILE2B="$(mktemp)"
+OUT2B="$(CLAUDE_ENV_FILE="$ENVFILE2B" bash "$START" <<<"$(sessionstart_payload "$SID_SWEEPER")")"
+assert_contains "sweep: flags a present-but-stale-transcript claim" "$OUT2B" "$BEAD3B_ID"
+assert_contains "sweep: names the transcript as stale, not just missing" "$OUT2B" "stale"
+STATUS_STALE_AFTER="$(bd show --json "$BEAD3B_ID" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["status"])')"
+assert_eq "sweep: stale-transcript claim's Bead stays in_progress (advisory only)" \
+  "in_progress" "$STATUS_STALE_AFTER"
+
+# A FRESH transcript (default threshold, well under 6h) must NOT be flagged.
+: > "$HOME/.claude/projects/fake-project/$SID_LIVE.jsonl"
+ENVFILE2C="$(mktemp)"
+OUT2C="$(CLAUDE_ENV_FILE="$ENVFILE2C" bash "$START" <<<"$(sessionstart_payload "$SID_SWEEPER")")"
+python3 - "$OUT2C" "$BEAD4_ID" <<'PYEOF'
+import sys
+out, live_id = sys.argv[1:3]
+assert live_id not in out, f"{live_id} should NOT appear in sweep advisories: {out}"
+PYEOF
+[ $? -eq 0 ] && eb_ok "sweep: a fresh-mtime transcript stays live (not flagged as stale)" \
+             || eb_bad "sweep: a fresh-mtime transcript stays live (not flagged as stale)"
+rm -f "$ENVFILE2B" "$ENVFILE2C"
+
+# --- 4c. N1 (review pa-s2s.8-review-2): a Bead that is acceptance-pending, held by a session
+#         whose transcript is dead, is NOT listed as crashed (no "looks crashed", no
+#         bead-release.sh advisory for it) — a distinct advisory routes it to bead-accept.sh -----
+SID_PEND_DEAD="cccccccc-dddd-dddd-dddd-dddddddddddd"
+BEAD3C_JSON="$(BEADS_ACTOR=creator bd create "pending dead-session sweep test" --type task -p 2 --json)"
+BEAD3C_ID="$(printf '%s' "$BEAD3C_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+BEADS_ACTOR="$SID_PEND_DEAD" bd update "$BEAD3C_ID" --claim --json >/dev/null
+BEADS_ACTOR="$SID_PEND_DEAD" bd update "$BEAD3C_ID" --append-notes "EVIDENCE: pending" --json >/dev/null
+BEADS_ACTOR="$SID_PEND_DEAD" bd update "$BEAD3C_ID" --add-label "acceptance-pending" --json >/dev/null
+# No transcript file at all for SID_PEND_DEAD -> would look "dead" under the crash-sweep logic.
+
+ENVFILE2D="$(mktemp)"
+OUT2D="$(CLAUDE_ENV_FILE="$ENVFILE2D" bash "$START" <<<"$(sessionstart_payload "$SID_SWEEPER")")"
+assert_contains "N1: a pending Bead held by a dead-transcript session still gets an advisory" \
+  "$OUT2D" "$BEAD3C_ID"
+assert_contains "N1: the pending advisory names bead-accept.sh" "$OUT2D" "bead-accept.sh"
+python3 - "$OUT2D" "$BEAD3C_ID" <<'PYEOF'
+import json, sys
+out, bid = sys.argv[1:3]
+ctx = json.loads(out)["hookSpecificOutput"].get("additionalContext", "")
+found = False
+for line in ctx.splitlines():
+    if bid in line:
+        found = True
+        assert "looks crashed" not in line, f"pending Bead's line must not say 'looks crashed': {line}"
+        assert "bead-release.sh" not in line, f"pending Bead's line must not point to bead-release.sh: {line}"
+assert found, f"{bid} not found in any advisory line: {ctx}"
+PYEOF
+[ $? -eq 0 ] && eb_ok "N1: pending Bead's advisory line excludes 'looks crashed' and bead-release.sh" \
+             || eb_bad "N1: pending Bead's advisory line excludes 'looks crashed' and bead-release.sh"
+STATUS_PEND_DEAD_AFTER="$(bd show --json "$BEAD3C_ID" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["status"])')"
+assert_eq "N1: the pending Bead itself stays in_progress (sweep never releases)" \
+  "in_progress" "$STATUS_PEND_DEAD_AFTER"
+rm -f "$ENVFILE2D"
+
+# --- 4d. N1/§12.5 (advisor follow-up): a pending Bead held by a LIVE session (fresh transcript)
+#         gets NO advisory at all — the sweep is about dead sessions only, label or not -----------
+BEAD3D_JSON="$(BEADS_ACTOR=creator bd create "pending live-session sweep test" --type task -p 2 --json)"
+BEAD3D_ID="$(printf '%s' "$BEAD3D_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+BEADS_ACTOR="$SID_LIVE" bd update "$BEAD3D_ID" --claim --json >/dev/null
+BEADS_ACTOR="$SID_LIVE" bd update "$BEAD3D_ID" --append-notes "EVIDENCE: pending" --json >/dev/null
+BEADS_ACTOR="$SID_LIVE" bd update "$BEAD3D_ID" --add-label "acceptance-pending" --json >/dev/null
+# SID_LIVE's transcript was freshly touched just above (line ~124) -> reads as live.
+
+ENVFILE2E="$(mktemp)"
+OUT2E="$(CLAUDE_ENV_FILE="$ENVFILE2E" bash "$START" <<<"$(sessionstart_payload "$SID_SWEEPER")")"
+python3 - "$OUT2E" "$BEAD3D_ID" <<'PYEOF'
+import sys
+out, bid = sys.argv[1:3]
+assert bid not in out, f"a pending Bead held by a LIVE session must not appear in any advisory: {out}"
+PYEOF
+[ $? -eq 0 ] && eb_ok "N1: a pending Bead held by a LIVE session gets no advisory at all" \
+             || eb_bad "N1: a pending Bead held by a LIVE session gets no advisory at all"
+rm -f "$ENVFILE2E"
+
 # --- 5. SessionEnd timing: one direct stdin feed with one claimed Bead completes < 1s ----------
 BEAD5_JSON="$(BEADS_ACTOR=creator bd create "timing test" --type task -p 2 --json)"
 BEAD5_ID="$(printf '%s' "$BEAD5_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
@@ -145,6 +236,25 @@ if [ "$ELAPSED3_NS" -lt 1500000000 ]; then
 else
   eb_bad "SessionEnd: 3 concurrent claims release within 1.5s on a scratch db" "took ${ELAPSED3_MS}ms"
 fi
+
+# --- 5c. B1 fix (review pa-s2s.8-review-1): a Bead carrying `acceptance-pending` survives
+#         SessionEnd -- it must stay in_progress, still assigned, still labeled, even though its
+#         assignee matches the ending session's actor -----------------------------------------
+BEAD9_JSON="$(BEADS_ACTOR=creator bd create "acceptance-pending survives sessionend" --type task -p 2 --json)"
+BEAD9_ID="$(printf '%s' "$BEAD9_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+SID_PENDING="66666666-6666-6666-6666-666666666666"
+BEADS_ACTOR="$SID_PENDING" bd update "$BEAD9_ID" --claim --json >/dev/null
+BEADS_ACTOR="$SID_PENDING" bd update "$BEAD9_ID" --append-notes "EVIDENCE: pending report" --json >/dev/null
+BEADS_ACTOR="$SID_PENDING" bd update "$BEAD9_ID" --add-label "acceptance-pending" --json >/dev/null
+
+bash "$END" <<<"$(sessionend_payload "$SID_PENDING")" >/dev/null
+
+STATUS_PENDING_AFTER="$(bd show --json "$BEAD9_ID" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["status"])')"
+ASSIGNEE_PENDING_AFTER="$(bd show --json "$BEAD9_ID" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0].get("assignee") or "")')"
+LABELS_PENDING_AFTER="$(bd show --json "$BEAD9_ID" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)[0].get("labels") or []))')"
+assert_eq "B1: an acceptance-pending Bead stays in_progress across SessionEnd" "in_progress" "$STATUS_PENDING_AFTER"
+assert_eq "B1: an acceptance-pending Bead keeps its assignee across SessionEnd" "$SID_PENDING" "$ASSIGNEE_PENDING_AFTER"
+assert_contains "B1: an acceptance-pending Bead keeps its label across SessionEnd" "$LABELS_PENDING_AFTER" "acceptance-pending"
 
 # --- 6. Both hooks no-op silently when BEADS_DIR does not resolve ------------------------------
 OUT_NODB="$(env -u BEADS_DIR bash "$START" <<<"$(sessionstart_payload "cccccccc-cccc-cccc-cccc-cccccccccccc")" 2>&1)"

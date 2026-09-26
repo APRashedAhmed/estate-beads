@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 # The closer (design §13; contract §5.3-§5.5). Two forms:
-#   --id <id> --evidence <path>   (§11.4: an accept:evidence Bead already acceptance-pending)
-#   --review <report>             (§13: a review verdict; the reviewer never mutates state,
-#                                   this script is the sole act of acceptance on its output)
+#   --id <id> --evidence <path> [--operator]   (§11.4: an accept:evidence Bead already
+#                                                acceptance-pending, or an accept:operator Bead
+#                                                closed on the operator's say-so in chat, which
+#                                                REQUIRES --operator; §11.6)
+#   --review <report>                          (§13: a review verdict; the reviewer never
+#                                                mutates state, this script is the sole act of
+#                                                acceptance on its output)
 # The reviewer never mutates Bead state; no hook closes a Bead; this is the only closer.
+# N2 (fix round 2, review pa-s2s.8-review-2): the --id --evidence form gates on the Bead's
+# accept: mode — evidence closes as before; operator requires the explicit --operator flag
+# (never silently); independent refuses outright, naming --review <report> as the only path (a
+# fresh auditor's verdict is the judgment for that mode, never this form).
 # Decision vocabulary on stdout, one line:
 #   CLOSED | ACCEPTANCE-PENDING <authority> | FAILED <cycles-left> | HALTED [<reason>] | INCOMPLETE
 #   | BLOCKED-BY <ids> (exit 1: the Bead has open blockers; nothing was changed, re-run once they
@@ -17,13 +25,14 @@ die() { printf '%s: %s\n' "$SELF" "$1" >&2; exit "${2:-1}"; }
 # shellcheck source=lib/eb-common.sh
 source "$SCRIPT_DIR/lib/eb-common.sh"
 
-id=""; evidence=""; review=""
+id=""; evidence=""; review=""; operator=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --id)       id="${2-}"; shift 2 ;;
     --evidence) evidence="${2-}"; shift 2 ;;
     --review)   review="${2-}"; shift 2 ;;
-    *) die "unknown flag '$1'. Flags: --id <bead-id> --evidence <path>  |  --review <report-path>" ;;
+    --operator) operator=1; shift ;;
+    *) die "unknown flag '$1'. Flags: --id <bead-id> --evidence <path> [--operator]  |  --review <report-path>" ;;
   esac
 done
 command -v jq >/dev/null || die "jq not on PATH. Install jq, then re-run."
@@ -47,6 +56,47 @@ release_and_halt() {  # <id> <halt-label> <next-line>
     || die "the halt landed but the rule-5 note failed to write (COMPLETED/workunit/other lines were meant to be preserved). Run: $SCRIPT_DIR/bead-progress.sh --id $id --preserve --in-progress 'released: $label' --next '$next'"
 }
 
+# M1 (review pa-s2s.8-review-1): `bd close` refuses when the actor is not the recorded assignee
+# (since U3 the actor is the session id, so the closer only worked inside the claiming session).
+# Design §11.6: an accept:operator Bead is closed on the operator's say-so in chat, in a LATER
+# session by definition; accept:evidence/independent's closer runs from the executor's own
+# session too, but a review can land after that session ends. Probed empirically on bd 1.3.0
+# (scratch db): `bd close --force` bypasses ONLY the assignee-mismatch refusal for our purposes
+# here (this script already checks open blockers itself, via eb_open_blockers, before ever
+# reaching this call) and leaves the `assignee` field untouched -- the original executor stays on
+# record as who did the work. `--force` is passed ONLY when the actor differs from the recorded
+# assignee, never unconditionally, so a same-session close behaves exactly as before.
+#
+# Atomic-as-BLOCKED-BY restore: the caller passes the bead's PRE-mutation notes; on a close
+# failure this restores that exact blob (undoing the EVIDENCE/"closed by" append) and re-adds
+# acceptance-pending, so a retry never sees a duplicated EVIDENCE line.
+# N6 (fix round 2, review pa-s2s.8-review-2): `bd` records no closer-actor field anywhere a
+# cross-actor close is visible (verified empirically: `bd show --json`/`--long` and `bd history
+# --json` all show "beads" as the committer, never the actor who ran `bd close`). Rule 5 sanctions
+# only the EVIDENCE line as an append, never a second free-text line, so the closer goes INSIDE
+# that one line, parenthetically, rather than as its own "closed by ..." line.
+eb_close_or_restore() {  # <id> <orig-notes> <evidence-line> <close-reason> <retry-hint>
+  local id="$1" orig_notes="$2" evidence_line="$3" close_reason="$4" retry_hint="$5"
+  local assignee actor close_args=(--reason "$close_reason")
+
+  assignee="$(bd show --json "$id" 2>/dev/null | jq -r '.[0].assignee // ""')"
+  actor="${BEADS_ACTOR:-}"
+  if [[ -n "$assignee" && "$assignee" != "$actor" ]]; then
+    close_args+=(--force)
+    evidence_line="${evidence_line} (closed by ${actor:-<unknown actor>})"
+  fi
+
+  bd update "$id" --append-notes "$evidence_line" >/dev/null \
+    || die "'bd update $id --append-notes' failed. Fix the reported cause and re-run; nothing was changed."
+  bd update "$id" --remove-label "acceptance-pending" >/dev/null \
+    || die "the evidence line landed but removing 'acceptance-pending' failed. Run: bd update $id --remove-label acceptance-pending"
+  if ! bd close "$id" "${close_args[@]}" >/dev/null; then
+    bd update "$id" --add-label "acceptance-pending" >/dev/null 2>&1
+    bd update "$id" --notes "$orig_notes" >/dev/null 2>&1
+    die "the label was removed but 'bd close' failed; restored 'acceptance-pending' and the prior notes. Fix the reported cause, then re-run: $retry_hint"
+  fi
+}
+
 # =============================================================================================
 # Form 1: --id --evidence (design §11.4)
 # =============================================================================================
@@ -60,21 +110,32 @@ if [[ -n "$evidence" ]]; then
   [[ "$status" == "in_progress" && "$has_pending" == "1" ]] \
     || die "Bead $id is not acceptance-pending (status=$status). Run bead-report-success.sh first."
 
+  # N2 (fix round 2, review pa-s2s.8-review-2): the accept-mode gate. Before this fix the form
+  # closed ANY acceptance-pending Bead as ANY actor, including accept:independent ones with no
+  # review at all — a universal bypass of independent review once the guard made this script the
+  # only close path.
+  mode="$(printf '%s' "$bead" | jq -r '[.labels[]? | select(startswith("accept:"))] | if length == 1 then .[0][7:] else "" end')"
+  [[ -n "$mode" ]] || die "Bead $id does not carry exactly one 'accept:' label. Run check-bead.sh --id $id, fix the labels, then re-run."
+  case "$mode" in
+    evidence) ;;
+    operator)
+      [[ "$operator" -eq 1 ]] || die "Bead $id is accept:operator; this form closes it only on the operator's explicit say-so. Re-run with --operator (design §11.6) once the operator has said so in chat."
+      ;;
+    independent)
+      die "Bead $id is accept:independent; this form never closes it (no review would have been checked). Use --review <report> with a fresh auditor's PASS verdict."
+      ;;
+    *) die "Bead $id carries an unrecognized accept: mode '$mode'." ;;
+  esac
+
   blockers="$(eb_open_blockers "$id")" || die "'bd show --json $id' failed while checking blockers. Nothing was changed."
   if [[ -n "$blockers" ]]; then
     printf 'BLOCKED-BY %s\n' "$blockers"
     exit 1
   fi
 
-  bd update "$id" --append-notes "EVIDENCE: ${evidence}" >/dev/null \
-    || die "'bd update $id --append-notes' failed. Fix the reported cause and re-run; nothing was changed."
-  bd update "$id" --remove-label "acceptance-pending" >/dev/null \
-    || die "the evidence line landed but removing 'acceptance-pending' failed. Run: bd update $id --remove-label acceptance-pending"
-  bd close "$id" --reason "accepted ${evidence}" >/dev/null \
-    || {
-      bd update "$id" --add-label "acceptance-pending" >/dev/null 2>&1
-      die "the label was removed but 'bd close' failed; restored 'acceptance-pending'. Fix the reported cause, then re-run: bead-accept.sh --id $id --evidence ${evidence}"
-    }
+  orig_notes="$(printf '%s' "$bead" | jq -r '.notes // ""')"
+  eb_close_or_restore "$id" "$orig_notes" "EVIDENCE: ${evidence}" "accepted ${evidence}" \
+    "bead-accept.sh --id $id --evidence ${evidence}"
   printf 'CLOSED\n'
   exit 0
 fi
@@ -84,6 +145,10 @@ fi
 # =============================================================================================
 [[ -n "$review" ]] || die "give --id --evidence <path>, or --review <report-path>."
 [[ -f "$review" ]] || die "no report at '$review'. Confirm the path, then re-run."
+# m10 (review pa-s2s.8-review-1): resolve to absolute BEFORE writing it anywhere (EVIDENCE line,
+# close_reason, NEXT) — bead-reopen.sh later string-compares its own `prior` against this exact
+# value, and a relative path recorded here can never match a later realpath'd comparison.
+review="$(realpath "$review")"
 
 fm="$(eb_read_frontmatter "$SCRIPT_DIR/lib" "$review")" \
   || die "'$review' has no readable YAML frontmatter (bead/verdict/reviewer/spawn/prior). Fix it, then re-run."
@@ -142,21 +207,16 @@ case "$r_verdict" in
       evidence|independent)
         # These two modes are the ones that call `bd close` below — check open blockers BEFORE
         # any mutation so a refusal here changes nothing (accept:operator never closes here; its
-        # eventual close goes through the --evidence form, which checks again there).
+        # eventual close goes through the --id --evidence --operator form, which checks again
+        # there, and requires the operator's explicit say-so via --operator — N2).
         blockers="$(eb_open_blockers "$r_bead")" || die "'bd show --json $r_bead' failed while checking blockers. Nothing was changed."
         if [[ -n "$blockers" ]]; then
           printf 'BLOCKED-BY %s\n' "$blockers"
           exit 1
         fi
-        bd update "$r_bead" --append-notes "$evidence_line" >/dev/null \
-          || die "'bd update $r_bead --append-notes' failed. Fix the reported cause and re-run; nothing was changed."
-        bd update "$r_bead" --remove-label "acceptance-pending" >/dev/null \
-          || die "the evidence line landed but removing 'acceptance-pending' failed. Run: bd update $r_bead --remove-label acceptance-pending"
-        bd close "$r_bead" --reason "accepted ${review}" >/dev/null \
-          || {
-            bd update "$r_bead" --add-label "acceptance-pending" >/dev/null 2>&1
-            die "the label was removed but 'bd close' failed; restored 'acceptance-pending'. Fix the reported cause, then re-run: bead-accept.sh --review ${review}"
-          }
+        r_orig_notes="$(printf '%s' "$bead" | jq -r '.notes // ""')"
+        eb_close_or_restore "$r_bead" "$r_orig_notes" "$evidence_line" "accepted ${review}" \
+          "bead-accept.sh --review ${review}"
         printf 'CLOSED\n'
         ;;
       operator)

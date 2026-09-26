@@ -1,0 +1,11 @@
+{
+  "id": "row73-help-allow",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd close --help"
+  },
+  "cwd": "__CWD__",
+  "expected": "allow"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "row66-duplicate-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd duplicate pa-abc --of pa-xyz"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "operator ruling pending"
+}
