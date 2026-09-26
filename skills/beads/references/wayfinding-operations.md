@@ -28,13 +28,15 @@ overrides it. Vocabulary: the word is **Bead**; the tracker-generic noun is not 
 
 - **Map**: an `epic` Bead, labels `wayfinder:map` and `wf:<effort-slug>`, `--workunit` pointing at
   the effort's work-unit directory. Description holds `## Destination` and `## Standing directives`
-  only (never a section named Notes; that is the rule-5 field).
+  only (never a section named Notes; that is the rule-5 field), with one exception: a deferred map
+  carries exactly one additional `## Trigger` section (Defer, below).
 - **Child Bead**: `--parent <map-id>`. Type by kind: `decision` for grilling, `spike` for research and
   prototype, `task` for task. Labels: `wayfinder:<grilling|research|prototype|task>`, `operator` or
   `auto`, **and `wf:<effort-slug>` set explicitly** — the estate's create path passes
   `--no-inherit-labels` with `--parent` (create-bead.sh:156-158), so nothing is inherited.
-  Description is `## Question` and nothing else. Accept mode: OPERATOR Beads `accept:evidence` (the
-  operator's live answer, recorded in the design note, is the evidence); AUTO Beads
+  Description is `## Question` and nothing else, with one exception: a deferred child carries
+  exactly one additional `## Trigger` section (Defer, below). Accept mode: OPERATOR Beads
+  `accept:evidence` (the operator's live answer, recorded in the design note, is the evidence); AUTO Beads
   `accept:independent` (review-based acceptance, contract §5.3/§9 rule 9: the map holder
   dispatches a fresh reviewer per `references/review-brief.md` on `ACCEPTANCE-PENDING review`
   and runs `bead-accept.sh --review <report>` on the verdict — it never accepts on its own say-so
@@ -42,6 +44,15 @@ overrides it. Vocabulary: the word is **Bead**; the tracker-generic noun is not 
 - **Blocking**: native, `bd dep <blocker-id> --blocks <blocked-id>`; run `bd dep cycles` after a
   wiring pass. A Bead surfaced by resolving another also gets
   `bd dep add <new> <resolver> -t discovered-from`. Blocked-by is the live gate; `bd ready` reads it.
+- **Defer**: recognized work the map holder wants but does not fund now (strata.md Selection; contract
+  §1.2). Exactly one trigger, stated under `## Trigger` in the description — the one section a
+  deferred Bead's description carries beyond its fixed shape (Map, Child Bead above); nothing else
+  about the shape changes. *time* →
+  `bd defer <id> --until <date>` (auto-wakes to `open`). *Bead completion* → the blocking edge alone,
+  `bd dep <blocker> --blocks <id>`; the Bead stays `open` and `bd ready` releases it when the blocker
+  closes. *capability* → `bd defer <id>` undated; the Strategy review or audit walk undefers it once the
+  capability exists. `bd ready` already excludes deferred and blocked Beads. Re-deferral and kills
+  (`declined`) happen at the Strategy review, not on wake.
 - **Ready set**: `bd ready -l wf:<effort-slug> --exclude-label wayfinder:out-of-scope --json`
   (`bd ready --help`, verified live on bd 1.3.0: `--exclude-label` "Exclude issues that have ANY
   of these labels" — needed because releasing an out-of-scope Bead returns it to `open`, which

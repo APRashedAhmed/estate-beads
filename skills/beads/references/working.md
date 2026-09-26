@@ -38,7 +38,8 @@ only what survives as judgment; the guard's own deny message carries the rest.
 6. **Create new Beads rarely.** A child or blocking Bead only for work *necessary* to yours that
    passes T1–T5 (`references/authoring.md`), citing your Bead as `recognized-by` and linked
    `discovered-from`. Useful but unnecessary → proposal intake. Steps of your own work are never
-   Beads.
+   Beads. Recognized work that is wanted but not funded now is deferred with one stated trigger
+   under `## Trigger` (contract §1.2), never lapsed.
 7. **Hand off on the Bead and in the work-unit.** See the carrier table and resume order below. A
    claim never outlives its session: release it yourself with
    `scripts/bead-release.sh --id <id> --note "<why>"` unless the same actor resumes, and the
