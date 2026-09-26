@@ -7,6 +7,12 @@
 # A leading literal "$SEAT_ROOT" in a metadata path (workunit references written before this
 # fix existed) is expanded before any filesystem test. Never a shell-level expansion — the
 # string is stored literally in bd's metadata JSON.
+# m5 residual (fix round 2, review pa-s2s.8-review-2): the `$HOME/heliopolis` fallback is exactly
+# that — a fallback, used only when $SEAT_ROOT is unset. SEAT_ROOT is an estate-wide session
+# convention (every seat exports it; see ~/.agents/AGENTS.md "Important Locations"), so this
+# resolves correctly on any seat where it is exported, same as every other estate script that
+# reads it. Settled here, not deferred further: a hardcoded fallback for the rare unexported case
+# is strictly better than dying outright, and no operator ruling has named a different default.
 eb_expand_seat_root() {
   local p="$1"
   printf '%s' "${p/\$SEAT_ROOT/${SEAT_ROOT:-$HOME/heliopolis}}"
@@ -45,13 +51,16 @@ eb_model_valid() {
 
 # --- Model detection (decision 1) -----------------------------------------------------------
 # Detect the current session's model via the ua-model oracle. Overridable for hermetic tests
-# via EB_MODEL_ORACLE (defaults to the fixed install path the oracle documents itself at).
+# via EB_MODEL_ORACLE (defaults to the fixed install path the oracle documents itself at, under
+# ${CLAUDE_CONFIG_DIR:-$HOME/.claude} — m5, fix round 2 residual: this estate is per-account
+# config-dir keyed, same as the sweep's transcript root in eb-session-start.sh; a hardcoded
+# $HOME/.claude here would look for another account's oracle state file).
 # Prints the ladder name (haiku|sonnet|opus|fable) on stdout and returns 0 when the oracle
 # reports state "ok" and a recognized family; returns 1 (prints nothing) otherwise — every
 # non-ok oracle state nulls the trusted keys by the oracle's own contract, so "not ok" is
 # always treated as undetectable, never as a confidently-wrong guess.
 eb_detect_model() {
-  local oracle="${EB_MODEL_ORACLE:-$HOME/.claude/state/ua-model.sh}"
+  local oracle="${EB_MODEL_ORACLE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/state/ua-model.sh}"
   [[ -x "$oracle" || -f "$oracle" ]] || return 1
   local out state family
   out="$(bash "$oracle" get --json 2>/dev/null)" || return 1

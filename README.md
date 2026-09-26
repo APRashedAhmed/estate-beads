@@ -28,8 +28,7 @@ Architecture decisions live in `decisions/` (managed by adr-tools — `adr new` 
 `adr check` runs at pre-commit). Plans/specs/audits/learnings go to the plugin's PerAnkh folder.
 
 ## Conventions
-- Namespace prefix for state files / launchers: `eb-`; for env vars (uppercase): `EB_`
-  (shorten it if `estate-beads` is long — keep it collision-safe in shared `~/.claude/state/`).
+- Namespace prefix for state files / launchers: `eb-`; for env vars (uppercase): `EB_` — collision-safe in shared `~/.claude/state/`.
 - Versioning: no `version` field; commit-SHA drives updates. Annotated git tags
   (`git tag -a vX.Y`) are the human-readable release anchors. No CHANGELOG.md.
 - Provider shape: this repo is authored **Claude-shape-canonical** — `skills/`, `agents/`,
@@ -194,11 +193,14 @@ are the residue the guard cannot mechanize.
 auditor one tier above the executor emits a verdict frontmatter block (`references/review-brief.md`
 is the fragment appended to its brief), and the executor's session runs
 `scripts/bead-accept.sh --review <report>` as the sole closer — the reviewer never mutates Bead
-state. Rule 9 in `references/working.md` carries the four stdout branches
-(`CLOSED | FAILED <cycles-left> | HALTED [<reason>] | INCOMPLETE`) verbatim from that script's
-decision vocabulary, so a change to the script's tokens is a breaking change to the skill's prose
-too. A fifth branch, `BLOCKED-BY <ids>` (exit 1), fires before any mutation when the Bead has open
-blockers; nothing changes and the caller re-runs once they close.
+state. Rule 9 in `references/working.md` carries this script's full stdout decision vocabulary
+verbatim (`CLOSED | ACCEPTANCE-PENDING <authority> | FAILED <cycles-left> | HALTED [<reason>] |
+INCOMPLETE | BLOCKED-BY <ids>`), so a change to the script's tokens is a breaking change to the
+skill's prose too (m6, fix round 2 residual — the README previously listed only four of the six).
+`ACCEPTANCE-PENDING <authority>` fires on a PASS against an `accept:operator` Bead — the review
+still leaves it awaiting the operator's say-so, never closing it directly. `BLOCKED-BY <ids>`
+(exit 1) fires before any mutation when the Bead has open blockers; nothing changes and the
+caller re-runs once they close.
 
 **Register.** SKILL.md is `function=procedure` (a router with two operative facts) and Navigation
 shape (~30 lines) rather than the plain-router size the label alone suggests.
