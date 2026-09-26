@@ -87,7 +87,11 @@ only what survives as judgment; the guard's own deny message carries the rest.
    `scripts/bead-reopen.sh --review <report>`, which prints `REOPENED`.
 10. **Never close on a runtime's exit code, and never abandon.** A failed attempt leaves the work
     needed: release the claim, return the Bead to open, note what failed. Abandonment is proposed in
-    a note, never performed by the executor.
+    a note, never performed by the executor. The other §5.4 close reasons (`superseded`, `duplicate`,
+    `abandoned`, `infeasible`, `declined`) go through `scripts/bead-close.sh --id <id> --reason <word>
+    --note <text> [--ref <bead-id>] [--evidence <path>] [--operator]`, gated per contract §5.4's "Who
+    may close" column; it prints `CLOSED <reason>`, `BLOCKED-BY <ids>`, or `REFUSED <why>` (exit 1 on
+    the last two).
 11. **If Beads is unavailable**, finish the unit in hand, record the pending Beads update in the
     work-unit handoff, and start no new Bead work. Never record lifecycle in another tracker.
 12. **Before closing your session**, check every Bead you claimed is closed, `acceptance-pending`, or

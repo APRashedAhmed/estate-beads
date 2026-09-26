@@ -8,5 +8,5 @@
   },
   "cwd": "__CWD__",
   "expected": "deny",
-  "reason_contains": "operator ruling pending"
+  "reason_contains": "scripts/bead-close.sh --reason superseded"
 }

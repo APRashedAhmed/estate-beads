@@ -30,6 +30,7 @@ you and is the read path to prefer.
 | A Bead you reported is `ACCEPTANCE-PENDING review` | `references/working.md` rule 9, and append `references/review-brief.md` to the auditor brief |
 | A Bead you reported is `ACCEPTANCE-PENDING operator`, and the operator has said so in chat | `references/working.md` rule 9 (`bead-accept.sh --id <id> --evidence '<message>' --operator`) |
 | Reopening a closed Bead on a later FAIL review | `references/working.md` rule 9 |
+| Closing a Bead for a §5.4 reason other than `accepted` (`superseded`, `duplicate`, `abandoned`, `infeasible`, `declined`) | `references/working.md` "Closing" (`bead-close.sh`) |
 
 ## Scripts
 
@@ -50,6 +51,7 @@ failure names what broke and the exact remedy.
 | `bead-accept.sh --id <id> --evidence '<message>' --operator` | closes an `accept:operator` Bead on the operator's say-so in chat (cite the message, not a file) — refuses without `--operator`; never accepted for `accept:independent` (use `--review` instead). Prints `CLOSED` |
 | `bead-accept.sh --review <report>` | the closer for a review verdict. Prints `CLOSED \| ACCEPTANCE-PENDING <authority> \| FAILED <cycles-left> \| HALTED [<reason>] \| INCOMPLETE \| BLOCKED-BY <ids>` (exit 1, nothing changed) |
 | `bead-release.sh --id <id> --note <why>` | release a claim: return to open, unassign, record the note. Prints `RELEASED`. Refuses an `acceptance-pending` Bead (awaiting acceptance, not abandoned) unless `--force-pending` is also given |
+| `bead-close.sh --id <id> --reason <superseded\|duplicate\|abandoned\|infeasible\|declined> --note <text> [--ref <bead-id>] [--evidence <path>] [--operator]` | the closer for the §5.4 reasons other than `accepted`, gated per contract §5.4's "Who may close" column. Refuses `accepted` (use `bead-accept.sh`), an open blocker, or an open child (contract §1.2 rule 3). Prints `CLOSED <reason>` |
 | `bead-reopen.sh --review <report>` | reopen a closed Bead on a later FAIL review citing the closing PASS report. Prints `REOPENED` |
 
 ## Not this skill
