@@ -28,6 +28,7 @@ you and is the read path to prefer.
 | Creating several Beads from one governing artifact | `references/authoring.md` (batch section) |
 | Holding a Bead and working it — claim, checkpoint, hand off, release, report success | `references/working.md` |
 | A Bead you reported is `ACCEPTANCE-PENDING review` | `references/working.md` rule 9, and append `references/review-brief.md` to the auditor brief |
+| A Bead you reported is `ACCEPTANCE-PENDING operator`, and the operator has said so in chat | `references/working.md` rule 9 (`bead-accept.sh --id <id> --evidence '<message>' --operator`) |
 | Reopening a closed Bead on a later FAIL review | `references/working.md` rule 9 |
 
 ## Scripts

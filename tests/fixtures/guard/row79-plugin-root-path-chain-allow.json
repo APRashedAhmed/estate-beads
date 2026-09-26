@@ -4,7 +4,7 @@
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
-    "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/bead-claim.sh\" --id pa-x && bd show --json pa-x"
+    "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/bead-read.sh\" --id x && bd show x"
   },
   "cwd": "__CWD__",
   "expected": "allow"

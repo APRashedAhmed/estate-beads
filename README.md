@@ -113,10 +113,13 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
   (`` "${CLAUDE_PLUGIN_ROOT}/scripts/bead-read.sh" --id x && bd show x ``,
   `bd ready | "$HOME/bin/fmt"`, `$EDITOR bd-notes.md`) — this guard never blocks a command merely
   because the word `bd` appears somewhere else in its text (a fix round 1 deviation from design
-  §12.1, reverted; see `pa-s2s.8-review-2` N3). Remaining unlisted wrappers/indirection
-  (`find … -exec bd close`, `setsid`, `doas`, `su -c`, `python3 -c os.system(...)`,
-  `$(command -v bd) close x`) are NOT covered — same class as pa-s2s.4-review-2 N1, still a known
-  gap.
+  §12.1, reverted; see `pa-s2s.8-review-2` N3). The literal `VAR=<literal>` assignment table is
+  built from the top-level command text AND any shell-fed heredoc body (`bash <<EOF\nB=bd\n$B
+  close x\nEOF` denies). Remaining unlisted wrappers/indirection (`find … -exec bd close`,
+  `setsid`, `doas`, `su -c`, `python3 -c os.system(...)`, `$(command -v bd) close x`, a
+  parameter-expansion default like `${B:-bd} close x`, or an assignment that only becomes visible
+  after crossing a subshell/`bash -c` boundary — `export B=bd; bash -c '$B close x'`) are NOT
+  covered — same class as pa-s2s.4-review-2 N1, still a known gap.
 - **Heredoc consumer (fix round 2, N4) — closed.** A heredoc fed to a shell/evaluator (`bash`,
   `sh`, `zsh`, `dash`, `ksh`, `eval`, `source`, `.`) executes its body as a command: a body line
   `shlex` cannot parse (e.g. an apostrophe) now fails the WHOLE command closed when it still

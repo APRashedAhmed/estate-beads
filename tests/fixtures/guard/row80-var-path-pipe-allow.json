@@ -4,7 +4,7 @@
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
-    "command": "bd ready --json | \"$HOME/bin/fmt\""
+    "command": "bd ready | \"$HOME/bin/fmt\""
   },
   "cwd": "__CWD__",
   "expected": "allow"

@@ -592,19 +592,32 @@ def _collect_assigns_from_text(text):
     in `text` (only a LITERAL right-hand side enters the table — one with no `$`, backtick, or
     `$( )` of its own, so `B=$(printf ...)` can never poison it with an unresolved value). Never
     raises: any tokenizing failure here just yields an empty table, which only means an
-    indirection stays unresolved (allowed), never a false deny."""
+    indirection stays unresolved (allowed), never a false deny.
+
+    Includes SHELL-FED heredoc bodies (`bash <<EOF\\nB=bd\\n$B close x\\nEOF`) — that body
+    executes as command text just as much as the rest of the command line, so an assignment
+    inside it is as much "the same command text" as one outside it. A DATA-fed heredoc body
+    (`cat`, `tee`, ...) is never scanned here; it never executes."""
     try:
-        stripped, _ = _extract_heredocs(text)
+        stripped, heredoc_bodies = _extract_heredocs(text)
     except ParseFailure:
-        stripped = text
+        stripped, heredoc_bodies = text, []
     stripped, _ = _extract_backticks(stripped)
     normalized = _normalize_newlines(stripped)
+    all_tokens = []
     try:
-        tokens = _shlex_tokens(normalized)
+        all_tokens.extend(_shlex_tokens(normalized))
     except ParseFailure:
-        return {}
+        pass
+    for is_shell_fed, body in heredoc_bodies:
+        if not is_shell_fed:
+            continue
+        try:
+            all_tokens.extend(_shlex_tokens(_normalize_newlines(body)))
+        except ParseFailure:
+            continue
     table = {}
-    for tok in tokens:
+    for tok in all_tokens:
         m = _ASSIGN_LITERAL_RE.match(tok)
         if m:
             table[m.group(1)] = m.group(2)

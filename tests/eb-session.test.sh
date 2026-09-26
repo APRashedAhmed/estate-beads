@@ -168,6 +168,26 @@ assert_eq "N1: the pending Bead itself stays in_progress (sweep never releases)"
   "in_progress" "$STATUS_PEND_DEAD_AFTER"
 rm -f "$ENVFILE2D"
 
+# --- 4d. N1/§12.5 (advisor follow-up): a pending Bead held by a LIVE session (fresh transcript)
+#         gets NO advisory at all — the sweep is about dead sessions only, label or not -----------
+BEAD3D_JSON="$(BEADS_ACTOR=creator bd create "pending live-session sweep test" --type task -p 2 --json)"
+BEAD3D_ID="$(printf '%s' "$BEAD3D_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+BEADS_ACTOR="$SID_LIVE" bd update "$BEAD3D_ID" --claim --json >/dev/null
+BEADS_ACTOR="$SID_LIVE" bd update "$BEAD3D_ID" --append-notes "EVIDENCE: pending" --json >/dev/null
+BEADS_ACTOR="$SID_LIVE" bd update "$BEAD3D_ID" --add-label "acceptance-pending" --json >/dev/null
+# SID_LIVE's transcript was freshly touched just above (line ~124) -> reads as live.
+
+ENVFILE2E="$(mktemp)"
+OUT2E="$(CLAUDE_ENV_FILE="$ENVFILE2E" bash "$START" <<<"$(sessionstart_payload "$SID_SWEEPER")")"
+python3 - "$OUT2E" "$BEAD3D_ID" <<'PYEOF'
+import sys
+out, bid = sys.argv[1:3]
+assert bid not in out, f"a pending Bead held by a LIVE session must not appear in any advisory: {out}"
+PYEOF
+[ $? -eq 0 ] && eb_ok "N1: a pending Bead held by a LIVE session gets no advisory at all" \
+             || eb_bad "N1: a pending Bead held by a LIVE session gets no advisory at all"
+rm -f "$ENVFILE2E"
+
 # --- 5. SessionEnd timing: one direct stdin feed with one claimed Bead completes < 1s ----------
 BEAD5_JSON="$(BEADS_ACTOR=creator bd create "timing test" --type task -p 2 --json)"
 BEAD5_ID="$(printf '%s' "$BEAD5_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"

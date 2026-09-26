@@ -20,6 +20,9 @@ title=""; btype="task"; description=""; acceptance=""
 project=""; accept=""; recognized_by=""
 tier=""; effort=""; workunit=""; governs=""; packet=""
 parent=""; deps=""; by=""
+# m5 (fix round 2, review pa-s2s.8-review-2): same fallback rationale as eb-common.sh's
+# eb_expand_seat_root — SEAT_ROOT is an estate-wide session convention every seat exports, so
+# $HOME/heliopolis only fires in the rare unexported case; settled, not deferred further.
 migration_log="${SEAT_ROOT:-$HOME/heliopolis}/PerAnkh/projects/permaat/workunits/2026-09-17-beads-state-sovereignty/migration-log.md"
 migrated_from=()
 force=0

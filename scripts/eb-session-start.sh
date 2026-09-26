@@ -104,18 +104,9 @@ for issue in issues:
         # This session's own claims are not "dead" — and at `startup` this session's own
         # transcript file may not exist yet regardless.
         continue
-    labels = (issue or {}).get("labels") or []
-    if "acceptance-pending" in labels:
-        # N1 (fix round 2, review pa-s2s.8-review-2): a pending Bead is awaiting acceptance, not
-        # abandoned (B1 already leaves it alone at SessionEnd) — never list it as "looks
-        # crashed" and never point it at bead-release.sh, which the previous sweep did whenever
-        # its session's transcript also happened to look dead/stale.
-        pending_advisories.append(
-            f"- {issue.get('id')} is claimed by session {sid} and is acceptance-pending — "
-            "awaiting acceptance, not crashed. Do NOT release it; close it via "
-            "scripts/bead-accept.sh (or the --review form, per its accept: label)."
-        )
-        continue
+    # M3/§12.5: liveness first, for EVERY candidate — the sweep only ever concerns claims held
+    # by a DEAD session; a Bead whose session is still live is not this sweep's business at all,
+    # whether or not it happens to carry acceptance-pending.
     transcripts = list(Path(config_dir).glob(f"projects/*/{sid}.jsonl"))
     if transcripts:
         # M3: presence alone is not a liveness signal — a transcript persists long after its
@@ -127,6 +118,20 @@ for issue in issues:
         reason = f"transcript at {transcripts[0]} is stale (>{stale_hours_raw}h old)"
     else:
         reason = f"no transcript found at {config_dir}/projects/*/{sid}.jsonl"
+
+    labels = (issue or {}).get("labels") or []
+    if "acceptance-pending" in labels:
+        # N1 (fix round 2, review pa-s2s.8-review-2): a pending Bead held by a DEAD session is
+        # awaiting acceptance, not abandoned (B1 already leaves it alone at SessionEnd) — never
+        # list it as "looks crashed" and never point it at bead-release.sh, which the previous
+        # sweep did whenever its session's transcript also happened to look dead/stale.
+        pending_advisories.append(
+            f"- {issue.get('id')} is claimed by session {sid} and is acceptance-pending — "
+            "awaiting acceptance, not crashed. Do NOT release it; close it via "
+            "scripts/bead-accept.sh (or the --review form, per its accept: label)."
+        )
+        continue
+
     advisories.append(
         f"- {issue.get('id')} is claimed by session {sid} ({reason}) — looks crashed. Advisory "
         f"only: run `{release_script} --id {issue.get('id')} --note '<why>'` to release it; "
