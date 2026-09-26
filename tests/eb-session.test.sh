@@ -133,6 +133,41 @@ PYEOF
              || eb_bad "sweep: a fresh-mtime transcript stays live (not flagged as stale)"
 rm -f "$ENVFILE2B" "$ENVFILE2C"
 
+# --- 4c. N1 (review pa-s2s.8-review-2): a Bead that is acceptance-pending, held by a session
+#         whose transcript is dead, is NOT listed as crashed (no "looks crashed", no
+#         bead-release.sh advisory for it) — a distinct advisory routes it to bead-accept.sh -----
+SID_PEND_DEAD="cccccccc-dddd-dddd-dddd-dddddddddddd"
+BEAD3C_JSON="$(BEADS_ACTOR=creator bd create "pending dead-session sweep test" --type task -p 2 --json)"
+BEAD3C_ID="$(printf '%s' "$BEAD3C_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+BEADS_ACTOR="$SID_PEND_DEAD" bd update "$BEAD3C_ID" --claim --json >/dev/null
+BEADS_ACTOR="$SID_PEND_DEAD" bd update "$BEAD3C_ID" --append-notes "EVIDENCE: pending" --json >/dev/null
+BEADS_ACTOR="$SID_PEND_DEAD" bd update "$BEAD3C_ID" --add-label "acceptance-pending" --json >/dev/null
+# No transcript file at all for SID_PEND_DEAD -> would look "dead" under the crash-sweep logic.
+
+ENVFILE2D="$(mktemp)"
+OUT2D="$(CLAUDE_ENV_FILE="$ENVFILE2D" bash "$START" <<<"$(sessionstart_payload "$SID_SWEEPER")")"
+assert_contains "N1: a pending Bead held by a dead-transcript session still gets an advisory" \
+  "$OUT2D" "$BEAD3C_ID"
+assert_contains "N1: the pending advisory names bead-accept.sh" "$OUT2D" "bead-accept.sh"
+python3 - "$OUT2D" "$BEAD3C_ID" <<'PYEOF'
+import json, sys
+out, bid = sys.argv[1:3]
+ctx = json.loads(out)["hookSpecificOutput"].get("additionalContext", "")
+found = False
+for line in ctx.splitlines():
+    if bid in line:
+        found = True
+        assert "looks crashed" not in line, f"pending Bead's line must not say 'looks crashed': {line}"
+        assert "bead-release.sh" not in line, f"pending Bead's line must not point to bead-release.sh: {line}"
+assert found, f"{bid} not found in any advisory line: {ctx}"
+PYEOF
+[ $? -eq 0 ] && eb_ok "N1: pending Bead's advisory line excludes 'looks crashed' and bead-release.sh" \
+             || eb_bad "N1: pending Bead's advisory line excludes 'looks crashed' and bead-release.sh"
+STATUS_PEND_DEAD_AFTER="$(bd show --json "$BEAD3C_ID" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["status"])')"
+assert_eq "N1: the pending Bead itself stays in_progress (sweep never releases)" \
+  "in_progress" "$STATUS_PEND_DEAD_AFTER"
+rm -f "$ENVFILE2D"
+
 # --- 5. SessionEnd timing: one direct stdin feed with one claimed Bead completes < 1s ----------
 BEAD5_JSON="$(BEADS_ACTOR=creator bd create "timing test" --type task -p 2 --json)"
 BEAD5_ID="$(printf '%s' "$BEAD5_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"

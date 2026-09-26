@@ -10,7 +10,11 @@
 #    ${EB_SESSION_START_SWEEP_STALE_HOURS:-6}h (M3, fix round 1 review pa-s2s.8-review-1 — a
 #    transcript persists long after its session ends, so presence alone is not a liveness
 #    signal), under ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/, naming scripts/bead-release.sh
-#    as the mechanism an operator/orchestrator runs.
+#    as the mechanism an operator/orchestrator runs. A Bead labeled `acceptance-pending` is
+#    EXCLUDED from that crashed-claim list (N1, fix round 2 review pa-s2s.8-review-2): it is
+#    awaiting acceptance, not abandoned, and SessionEnd already leaves it alone on purpose (B1).
+#    It gets its own, separate advisory naming scripts/bead-accept.sh (or bead-report-success.sh's
+#    review path) as the closer, never bead-release.sh.
 #
 # Both `bd prime --hook-json` and this hook's own output are the SAME SessionStart JSON envelope
 # (`{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext": "..."}}`) — the
@@ -89,6 +93,7 @@ SESSION_ID_RE = re.compile(
 )
 
 advisories = []
+pending_advisories = []
 for issue in issues:
     assignee = (issue or {}).get("assignee") or ""
     m = SESSION_ID_RE.match(assignee)
@@ -98,6 +103,18 @@ for issue in issues:
     if sid == own_session_id:
         # This session's own claims are not "dead" — and at `startup` this session's own
         # transcript file may not exist yet regardless.
+        continue
+    labels = (issue or {}).get("labels") or []
+    if "acceptance-pending" in labels:
+        # N1 (fix round 2, review pa-s2s.8-review-2): a pending Bead is awaiting acceptance, not
+        # abandoned (B1 already leaves it alone at SessionEnd) — never list it as "looks
+        # crashed" and never point it at bead-release.sh, which the previous sweep did whenever
+        # its session's transcript also happened to look dead/stale.
+        pending_advisories.append(
+            f"- {issue.get('id')} is claimed by session {sid} and is acceptance-pending — "
+            "awaiting acceptance, not crashed. Do NOT release it; close it via "
+            "scripts/bead-accept.sh (or the --review form, per its accept: label)."
+        )
         continue
     transcripts = list(Path(config_dir).glob(f"projects/*/{sid}.jsonl"))
     if transcripts:
@@ -118,8 +135,12 @@ for issue in issues:
 
 out = prime
 hook_out = out.setdefault("hookSpecificOutput", {})
+extra = ""
 if advisories:
-    extra = "\n\n## estate-beads: possibly-crashed claims (advisory only, never auto-released)\n" + "\n".join(advisories) + "\n"
+    extra += "\n\n## estate-beads: possibly-crashed claims (advisory only, never auto-released)\n" + "\n".join(advisories) + "\n"
+if pending_advisories:
+    extra += "\n\n## estate-beads: acceptance-pending claims (not crashed; close via bead-accept.sh)\n" + "\n".join(pending_advisories) + "\n"
+if extra:
     hook_out["additionalContext"] = hook_out.get("additionalContext", "") + extra
 
 print(json.dumps(out))

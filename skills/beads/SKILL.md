@@ -47,7 +47,7 @@ failure names what broke and the exact remedy.
 | `bead-report-success.sh` | rule 9 — evidence, `acceptance-pending`, and a close only under `accept:evidence`. Prints `CLOSED` or `ACCEPTANCE-PENDING <authority>` |
 | `bead-accept.sh --id <id> --evidence <path>` | closes a Bead already `acceptance-pending` on cited evidence — an `accept:evidence` Bead reclaimed off-script, or an `accept:operator` Bead on the operator's say-so in chat (cite the message, not a file). Prints `CLOSED` |
 | `bead-accept.sh --review <report>` | the closer for a review verdict. Prints `CLOSED \| ACCEPTANCE-PENDING <authority> \| FAILED <cycles-left> \| HALTED [<reason>] \| INCOMPLETE \| BLOCKED-BY <ids>` (exit 1, nothing changed) |
-| `bead-release.sh --id <id> --note <why>` | release a claim: return to open, unassign, record the note. Prints `RELEASED` |
+| `bead-release.sh --id <id> --note <why>` | release a claim: return to open, unassign, record the note. Prints `RELEASED`. Refuses an `acceptance-pending` Bead (awaiting acceptance, not abandoned) unless `--force-pending` is also given |
 | `bead-reopen.sh --review <report>` | reopen a closed Bead on a later FAIL review citing the closing PASS report. Prints `REOPENED` |
 
 ## Not this skill
