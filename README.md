@@ -1,6 +1,6 @@
 # estate-beads
 
-Beads work-tracking for the estate: create, claim, report, accept, release and guard bd
+Beads work-tracking for the estate: create, claim, report, accept, close, release and guard bd
 
 ## Install
 `/plugin install estate-beads@homelab-plugins` (or standalone via this repo's `marketplace.json`).
@@ -204,6 +204,21 @@ skill's prose too (m6, fix round 2 residual — the README previously listed onl
 still leaves it awaiting the operator's say-so, never closing it directly. `BLOCKED-BY <ids>`
 (exit 1) fires before any mutation when the Bead has open blockers; nothing changes and the
 caller re-runs once they close.
+
+**Close paths for the other §5.4 reasons (design §14).** `scripts/bead-close.sh` is the closer for
+`superseded`, `duplicate`, `abandoned`, `infeasible`, and `declined` — gated to the actors contract
+§5.4's "Who may close" column names, so far as they are mechanically checkable: `--operator` is the
+only verifiable proxy for "the recognition source's owner" (abandoned, infeasible, superseded) and
+for "the reviewing actor at the Strategy review" (declined); an executor (actor == the Bead's own
+assignee) is refused outright and pointed at `bead-release.sh --note`. `superseded`/`duplicate`
+require `--ref <bead-id>`, verified to exist. `infeasible` requires `--evidence <path>`. The guard
+(`scripts/eb-guard.py`) denies raw `bd supersede`/`bd duplicate` naming this script. `lapsed` — the
+reason named in this Bead's original brief — was retired by the contract before this unit landed
+(Operator direction 2026-09-26, in favor of `declined`); `--reason lapsed` is refused outright,
+naming the replacement. The script also refuses an open A4 child (contract §1.2 rule 3: a
+non-accepted close must cascade to open children in the same action) rather than cascading — no
+cascade is built this unit. Prints `CLOSED <reason> | BLOCKED-BY <ids> | REFUSED <why>` (exit 1 on
+the last two).
 
 **Register.** SKILL.md is `function=procedure` (a router with two operative facts) and Navigation
 shape (~30 lines) rather than the plain-router size the label alone suggests.
