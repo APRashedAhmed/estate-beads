@@ -99,15 +99,32 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
   `shlex` (ordinary prose like `fix: don't ...`) no longer fails the WHOLE command closed; only
   that body degrades to a per-line first-token check (`cat <<EOF\nbd close ...\nEOF` still
   denies; a commit message merely containing the word "bd" does not).
-- **`env -S`/`--split-string` and command-position variable indirection (fix round 2, m3) —
-  closed.** `env -S 'bd close x'` now recurses into the split string the same way `bash -c`/`eval`
-  do. A variable, `$( )`, or backtick group sitting in COMMAND POSITION (`B=bd; $B close x`,
-  `` $(command -v bd) close x ``, `` `command -v bd` close x ``) denies whenever the word `bd`
-  appears anywhere in the original command text — deliberately broader than "this segment
-  invokes bd" (design §12.1's fail-closed default), since the guard cannot resolve what an
-  unresolved indirection names. Remaining unlisted wrappers/indirection (`find … -exec bd
-  close`, `setsid`, `doas`, `su -c`, `python3 -c os.system(...)`) are NOT covered — same class as
-  pa-s2s.4-review-2 N1, still a known gap.
+- **`env -S`/`--split-string` (fix round 2, m3/N5) — closed.** `env -S 'bd close x'` recurses
+  into the split string the same way `bash -c`/`eval` do, and this now resolves `env` even after
+  a wrapper prefix (`sudo env -S 'bd close x'` — fix round 2, N5: the wrapper-skip that lands on
+  `env` no longer also consumes `env`'s own `-S value`, so its flags stay visible to the check
+  that reads them).
+- **Command-position variable indirection (fix round 2, N3) — narrowed, not blanket.** A
+  command-position `$VAR`/`${VAR}` denies ONLY when a `VAR=<literal>` assignment elsewhere in the
+  same command text resolves it to a token whose basename is `bd` (`B=bd; $B close x`,
+  `B=b; ${B}d close x`) — judged through the same verb-dispatch table as any other `bd`
+  invocation once resolved, so the deny message names the actual verb. A `$( )`/backtick command
+  substitution in command position (`` $(command -v bd) close x ``) is never resolved this way
+  and is ALLOWED, same as an unresolved `$VAR` with no matching assignment
+  (`` "${CLAUDE_PLUGIN_ROOT}/scripts/bead-read.sh" --id x && bd show x ``,
+  `bd ready | "$HOME/bin/fmt"`, `$EDITOR bd-notes.md`) — this guard never blocks a command merely
+  because the word `bd` appears somewhere else in its text (a fix round 1 deviation from design
+  §12.1, reverted; see `pa-s2s.8-review-2` N3). Remaining unlisted wrappers/indirection
+  (`find … -exec bd close`, `setsid`, `doas`, `su -c`, `python3 -c os.system(...)`,
+  `$(command -v bd) close x`) are NOT covered — same class as pa-s2s.4-review-2 N1, still a known
+  gap.
+- **Heredoc consumer (fix round 2, N4) — closed.** A heredoc fed to a shell/evaluator (`bash`,
+  `sh`, `zsh`, `dash`, `ksh`, `eval`, `source`, `.`) executes its body as a command: a body line
+  `shlex` cannot parse (e.g. an apostrophe) now fails the WHOLE command closed when it still
+  mentions `bd`, so a prefixed/chained `bd` after an earlier unparseable line (`bash <<'EOF'\necho
+  it's\nsudo bd close x\nEOF`) can no longer slip past a first-token-only check. A heredoc fed to
+  anything else (`cat`, `tee`, a file) stays data: the per-line first-token degrade from fix round
+  1 (m2) still applies there (`cat <<'EOF'\nit's bd close time\nEOF` allows).
 - **Wrapper/keyword/shell-string commands (fix round 1, F2/F3) — closed.** Shell reserved words
   (`if`/`then`/`else`/`elif`/`do`/`while`/`until`/`!`/`{`/`time`) and wrappers with their own
   options/values (`timeout N`, `nohup`, `sudo [opts]`, `exec`, `command`, `nice [-n N]`,

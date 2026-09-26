@@ -1,10 +1,10 @@
 {
-  "id": "row77-variable-indirection-deny",
+  "id": "row82-brace-variable-indirection-deny",
   "session_id": "guard-test",
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
-    "command": "B=bd; $B close pa-x"
+    "command": "B=b; ${B}d close pa-x"
   },
   "cwd": "__CWD__",
   "expected": "deny",

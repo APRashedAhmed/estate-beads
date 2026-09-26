@@ -1,0 +1,11 @@
+{
+  "id": "row80-var-path-pipe-allow",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "bd ready --json | \"$HOME/bin/fmt\""
+  },
+  "cwd": "__CWD__",
+  "expected": "allow"
+}

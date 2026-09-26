@@ -1,0 +1,11 @@
+{
+  "id": "row81-editor-var-allow",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "$EDITOR bd-notes.md"
+  },
+  "cwd": "__CWD__",
+  "expected": "allow"
+}

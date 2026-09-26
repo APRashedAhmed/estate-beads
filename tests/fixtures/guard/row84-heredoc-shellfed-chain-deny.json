@@ -1,12 +1,12 @@
 {
-  "id": "row78-command-substitution-indirection-deny",
+  "id": "row84-heredoc-shellfed-chain-deny",
   "session_id": "guard-test",
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
-    "command": "$(command -v bd) close pa-x"
+    "command": "bash <<EOF\ncd x && bd close y\nEOF"
   },
   "cwd": "__CWD__",
   "expected": "deny",
-  "reason_contains": "command position"
+  "reason_contains": "bead-report-success.sh"
 }

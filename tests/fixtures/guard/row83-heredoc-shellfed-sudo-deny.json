@@ -1,12 +1,12 @@
 {
-  "id": "row77-variable-indirection-deny",
+  "id": "row83-heredoc-shellfed-sudo-deny",
   "session_id": "guard-test",
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
-    "command": "B=bd; $B close pa-x"
+    "command": "bash <<'EOF'\nsudo bd close x\nEOF"
   },
   "cwd": "__CWD__",
   "expected": "deny",
-  "reason_contains": "Raw bd close is denied"
+  "reason_contains": "bead-report-success.sh"
 }
