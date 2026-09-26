@@ -104,6 +104,64 @@ assert_contains "refusal names --operator" "$out" "--operator"
 bead="$(bd show --json "$declnonop" 2>/dev/null | jq -r '.[0].status')"
 assert_eq "non-operator declined refusal changes nothing" "open" "$bead"
 
+# --- superseded: non-permitted actor (non-operator, non-owner) refuses ----------------------
+supnonop="$(mk "Superseded-non-operator")"
+supref="$(mk "Superseded-non-operator-ref")"
+before_bead="$(bd show --json "$supnonop" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
+out="$(scripts/bead-close.sh --id "$supnonop" --reason superseded --ref "$supref" --note "x" 2>&1)"; rc=$?
+assert_rc "superseded without --operator refuses" 1 "$rc"
+assert_contains "refusal names --operator" "$out" "--operator"
+after_bead="$(bd show --json "$supnonop" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
+assert_eq "non-operator superseded refusal changes nothing" "$before_bead" "$after_bead"
+
+# --- infeasible: non-permitted actor (non-operator, non-owner) refuses -----------------------
+infeasnonop="$(mk "Infeasible-non-operator")"
+printf 'ev\n' > "$scratch/infeasible-nonop-evidence.txt"
+before_bead="$(bd show --json "$infeasnonop" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
+out="$(scripts/bead-close.sh --id "$infeasnonop" --reason infeasible --note "x" --evidence "$scratch/infeasible-nonop-evidence.txt" 2>&1)"; rc=$?
+assert_rc "infeasible without --operator refuses" 1 "$rc"
+assert_contains "refusal names --operator" "$out" "--operator"
+after_bead="$(bd show --json "$infeasnonop" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
+assert_eq "non-operator infeasible refusal changes nothing" "$before_bead" "$after_bead"
+
+# --- infeasible: missing --evidence refuses --------------------------------------------------
+infeasnoev="$(mk "Infeasible-no-evidence")"
+before_bead="$(bd show --json "$infeasnoev" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
+out="$(scripts/bead-close.sh --id "$infeasnoev" --reason infeasible --note "x" --operator 2>&1)"; rc=$?
+assert_rc "infeasible without --evidence refuses" 1 "$rc"
+assert_contains "refusal names --evidence" "$out" "--evidence"
+after_bead="$(bd show --json "$infeasnoev" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
+assert_eq "missing-evidence refusal changes nothing" "$before_bead" "$after_bead"
+
+# --- infeasible: nonexistent --evidence path refuses ------------------------------------------
+infeasbadev="$(mk "Infeasible-bad-evidence-path")"
+before_bead="$(bd show --json "$infeasbadev" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
+out="$(scripts/bead-close.sh --id "$infeasbadev" --reason infeasible --note "x" --evidence "$scratch/does-not-exist.txt" --operator 2>&1)"; rc=$?
+assert_rc "infeasible with nonexistent --evidence refuses" 1 "$rc"
+assert_contains "refusal names --evidence" "$out" "--evidence"
+after_bead="$(bd show --json "$infeasbadev" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
+assert_eq "nonexistent-evidence refusal changes nothing" "$before_bead" "$after_bead"
+
+# --- superseded/duplicate: nonexistent --ref refuses -----------------------------------------
+noexistref="$(mk "Ref-target-missing")"
+before_bead="$(bd show --json "$noexistref" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
+out="$(scripts/bead-close.sh --id "$noexistref" --reason superseded --ref "zz-does-not-exist" --note "x" --operator 2>&1)"; rc=$?
+assert_rc "nonexistent --ref refuses" 1 "$rc"
+assert_contains "refusal names the missing --ref" "$out" "does not exist"
+after_bead="$(bd show --json "$noexistref" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
+assert_eq "nonexistent-ref refusal changes nothing" "$before_bead" "$after_bead"
+
+# --- m1: --ref naming an already-closed Bead refuses -----------------------------------------
+closedref="$(mk "Already-closed-ref-target")"
+bd close "$closedref" --reason "cleanup" >/dev/null
+supclosed="$(mk "Superseded-onto-closed-ref")"
+before_bead="$(bd show --json "$supclosed" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
+out="$(scripts/bead-close.sh --id "$supclosed" --reason superseded --ref "$closedref" --note "x" --operator 2>&1)"; rc=$?
+assert_rc "--ref naming a closed Bead refuses" 1 "$rc"
+assert_contains "refusal names the closed --ref" "$out" "$closedref"
+after_bead="$(bd show --json "$supclosed" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
+assert_eq "closed-ref refusal changes nothing" "$before_bead" "$after_bead"
+
 # --- lapsed is retired: refused outright, naming declined -----------------------------------
 lapsedbead="$(mk "Lapsed-retired")"
 out="$(scripts/bead-close.sh --id "$lapsedbead" --reason lapsed --note "old-style close" --operator 2>&1)"; rc=$?
@@ -173,5 +231,49 @@ assert_rc "a failed bd close exits 1" 1 "$rc"
 after_bead="$(bd show --json "$failcase" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
 assert_eq "a failed bd close restores notes atomically (no dangling EVIDENCE line)" \
   "$before_bead" "$after_bead"
+
+# =============================================================================================
+# m3: a flag given without a value prints a usage line naming the flag and exits 1
+# =============================================================================================
+out="$(scripts/bead-close.sh --id "$(mk "Trailing-flag-no-value")" --reason 2>&1)"; rc=$?
+assert_rc "a trailing flag with no value exits 1" 1 "$rc"
+assert_contains "usage line names the flag" "$out" "--reason"
+
+# =============================================================================================
+# m2: a failed restore (after a failed bd close) prints RESTORE-FAILED and exits 2
+# =============================================================================================
+# Stub `bd` to fail `close` on one named id AND fail the restoring `update --notes` call for
+# that same id, so the EVIDENCE-append-then-restore path's restore step itself fails.
+restorefailcase="$(mk "Restore-fails-too")"
+printf 'evidence for the doubly-failing close\n' > "$scratch/restore-fail-evidence.txt"
+stubdir2="$scratch/stubbin2"
+mkdir -p "$stubdir2"
+cat > "$stubdir2/bd" <<STUB
+#!/usr/bin/env bash
+if [[ "\$1" == "close" ]]; then
+  for a in "\$@"; do
+    if [[ "\$a" == "$restorefailcase" ]]; then
+      echo "stub: injected close failure" >&2
+      exit 1
+    fi
+  done
+fi
+if [[ "\$1" == "update" && "\$2" == "$restorefailcase" ]]; then
+  for a in "\$@"; do
+    if [[ "\$a" == "--notes" ]]; then
+      echo "stub: injected restore failure" >&2
+      exit 1
+    fi
+  done
+fi
+exec "$REAL_BD" "\$@"
+STUB
+chmod +x "$stubdir2/bd"
+
+before_bead="$(bd show --json "$restorefailcase" 2>/dev/null | jq -c '.[0] | {status, labels, notes}')"
+out="$(PATH="$stubdir2:$PATH" scripts/bead-close.sh --id "$restorefailcase" --reason infeasible \
+  --note "cannot be done" --evidence "$scratch/restore-fail-evidence.txt" --operator 2>&1)"; rc=$?
+assert_rc "a doubly-failed close/restore exits 2" 2 "$rc"
+assert_contains "stderr prints RESTORE-FAILED with the id" "$out" "RESTORE-FAILED $restorefailcase"
 
 eb_report

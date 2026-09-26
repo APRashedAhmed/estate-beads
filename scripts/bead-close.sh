@@ -49,11 +49,11 @@ source "$SCRIPT_DIR/lib/eb-common.sh"
 id=""; reason=""; note=""; ref=""; evidence=""; operator=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --id)       id="${2-}"; shift 2 ;;
-    --reason)   reason="${2-}"; shift 2 ;;
-    --note)     note="${2-}"; shift 2 ;;
-    --ref)      ref="${2-}"; shift 2 ;;
-    --evidence) evidence="${2-}"; shift 2 ;;
+    --id)       [[ $# -ge 2 ]] || die "--id requires a value. Usage: --id <bead-id>."; id="$2"; shift 2 ;;
+    --reason)   [[ $# -ge 2 ]] || die "--reason requires a value. Usage: --reason <superseded|duplicate|abandoned|infeasible|declined>."; reason="$2"; shift 2 ;;
+    --note)     [[ $# -ge 2 ]] || die "--note requires a value. Usage: --note '<text>'."; note="$2"; shift 2 ;;
+    --ref)      [[ $# -ge 2 ]] || die "--ref requires a value. Usage: --ref <bead-id>."; ref="$2"; shift 2 ;;
+    --evidence) [[ $# -ge 2 ]] || die "--evidence requires a value. Usage: --evidence <path>."; evidence="$2"; shift 2 ;;
     --operator) operator=1; shift ;;
     *) die "unknown flag '$1'. Flags: --id <bead-id> --reason <superseded|duplicate|abandoned|infeasible|declined> --note '<text>' [--ref <bead-id>] [--evidence <path>] [--operator]" ;;
   esac
@@ -88,7 +88,10 @@ status="$(printf '%s' "$bead" | jq -r '.status')"
 if [[ "$reason" == superseded || "$reason" == duplicate ]]; then
   [[ -n "$ref" ]] || refused "$reason requires --ref <bead-id> naming the other Bead (contract §5.4)."
   [[ "$ref" != "$id" ]] || refused "--ref must name a different Bead, not $id itself."
-  bead_json "$ref" >/dev/null || refused "--ref '$ref' does not exist. Confirm the id, then re-run."
+  ref_bead="$(bead_json "$ref")" || refused "--ref '$ref' does not exist. Confirm the id, then re-run."
+  ref_status="$(printf '%s' "$ref_bead" | jq -r '.status')"
+  [[ "$ref_status" == "open" || "$ref_status" == "in_progress" ]] \
+    || refused "--ref '$ref' is $ref_status, not open or in_progress; $reason must name a Bead that replaces or duplicates live work."
 fi
 
 if [[ "$reason" == infeasible ]]; then
@@ -154,7 +157,11 @@ fi
 
 if ! bd close "$id" "${close_args[@]}" >/dev/null; then
   if [[ -n "$evidence_line" ]]; then
-    bd update "$id" --notes "$orig_notes" >/dev/null 2>&1
+    if ! bd update "$id" --notes "$orig_notes" >/dev/null 2>&1; then
+      printf 'RESTORE-FAILED %s: bd close failed AND restoring the pre-EVIDENCE notes also failed. Check %s'"'"'s notes for a dangling "%s" line; if present, remove it by hand: bd update %s --notes "<notes without that line>".\n' \
+        "$id" "$id" "$evidence_line" "$id" >&2
+      exit 2
+    fi
     die "'bd close $id' failed; restored notes to their pre-EVIDENCE state. Fix the reported cause, then re-run: bead-close.sh --id $id --reason $reason --note '$note' --evidence $evidence"
   fi
   die "'bd close $id' failed; nothing was changed. Fix the reported cause, then re-run."
