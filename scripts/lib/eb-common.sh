@@ -36,18 +36,64 @@ eb_metadata_merge() {  # <id> <json-fragment>
 # sonnet < opus < fable. Returns the numeric rank on stdout, or empty + rc=1 for an
 # unrecognized name. `haiku` stays rank 1 so Beads whose recorded executor.model is haiku still
 # evaluate; it is no longer a valid choice for new claims or reviewers (see eb_model_valid).
+eb_ladder_file() { printf '%s\n' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/verifier-ladder.json"; }
+
 eb_model_rank() {
-  case "${1:-}" in
-    haiku)  printf '1\n' ;;
-    sonnet) printf '2\n' ;;
-    opus)   printf '3\n' ;;
-    fable)  printf '4\n' ;;
-    *) return 1 ;;
-  esac
+  local r
+  r="$(jq -r --arg m "${1:-}" '.claude_ranks[$m] // empty' "$(eb_ladder_file)" 2>/dev/null)" || return 1
+  [[ -n "$r" ]] || return 1
+  printf '%s\n' "$r"
 }
 
 eb_model_valid() {
   case "${1:-}" in sonnet|opus|fable) return 0 ;; *) return 1 ;; esac
+}
+
+# eb_reviewer_adequate <exec-model> <exec-effort|""> <vendor|""> <model> <effort|"">
+# rc 0 = reviewer adequate for the executor. Non-zero = one-line reason on stderr.
+# claude (or vendor absent): reviewer rank > executor rank, or both top (fable); effort ignored.
+# codex: model@effort must be a ladder point whose rank >= the executor's row (missing effort =
+# strictest row for the model). Reads verifier-ladder.json; never reads Bead labels (ADR-030).
+eb_reviewer_adequate() {
+  local xm="${1:-}" xe="${2:-}" vendor="${3:-}" rm="${4:-}" re="${5:-}" lf xr rr top need
+  lf="$(eb_ladder_file)"
+  [[ -n "$vendor" ]] || vendor=claude
+  case "$vendor" in
+    claude)
+      eb_model_valid "$rm" || { printf "reviewer.model '%s' is not on the claude ladder (sonnet|opus|fable)\n" "$rm" >&2; return 1; }
+      xr="$(eb_model_rank "$xm")" || { printf "executor.model '%s' is not on the ladder\n" "$xm" >&2; return 1; }
+      rr="$(eb_model_rank "$rm")" || return 1
+      top="$(eb_model_rank fable)"
+      if [[ "$xr" == "$top" ]]; then
+        (( rr >= xr )) || { printf "reviewer '%s' is below executor '%s'; a top-tier executor needs a claude reviewer of fable\n" "$rm" "$xm" >&2; return 1; }
+      else
+        (( rr > xr )) || { printf "reviewer '%s' does not outrank executor '%s' (sonnet<opus<fable); need a claude reviewer one tier above\n" "$rm" "$xm" >&2; return 1; }
+      fi
+      ;;
+    codex)
+      [[ -n "$rm" && -n "$re" ]] || { printf "codex reviewer needs both reviewer.model and reviewer.effort\n" >&2; return 1; }
+      rr="$(jq -r --arg k "$rm@$re" '.codex_points[$k] // empty' "$lf")"
+      [[ -n "$rr" ]] || { printf "'%s@%s' is not on the codex verifier ladder\n" "$rm" "$re" >&2; return 1; }
+      xr="$(jq -r --arg m "$xm" --arg e "${xe:-missing}" '.executor_rows[$m] | if . == null then empty else (.[$e] // .missing) end' "$lf")"
+      [[ -n "$xr" ]] || { printf "executor.model '%s' has no codex verifier row\n" "$xm" >&2; return 1; }
+      if (( rr < xr )); then
+        need="$(jq -r --argjson x "$xr" '.codex_points | to_entries | map(select(.value == $x)) | .[0].key' "$lf")"
+        printf "codex '%s@%s' (point %s) is below executor '%s/%s' (row %s); lowest adequate codex point is %s (or a claude reviewer one tier above the executor)\n" "$rm" "$re" "$rr" "$xm" "${xe:-<no effort>}" "$xr" "$need" >&2
+        return 1
+      fi
+      ;;
+    *) printf "reviewer.vendor '%s' is not claude|codex\n" "$vendor" >&2; return 1 ;;
+  esac
+}
+
+# Oracle effort (the session's own); prints low|medium|high|xhigh|max, or returns 1 if undetectable.
+eb_detect_effort() {
+  local oracle="${EB_MODEL_ORACLE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/state/ua-model.sh}" out e
+  [[ -x "$oracle" || -f "$oracle" ]] || return 1
+  out="$(bash "$oracle" get --json 2>/dev/null)" || return 1
+  [[ "$(printf '%s' "$out" | jq -r '.state // ""' 2>/dev/null)" == "ok" ]] || return 1
+  e="$(printf '%s' "$out" | jq -r '.effort // ""' 2>/dev/null)"
+  case "$e" in low|medium|high|xhigh|max) printf '%s\n' "$e" ;; *) return 1 ;; esac
 }
 
 # --- Model detection (decision 1) -----------------------------------------------------------

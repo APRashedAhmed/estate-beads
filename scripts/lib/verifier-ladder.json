@@ -1,0 +1,17 @@
+{
+  "source": "$SEAT_ROOT/PerAnkh/projects/agent-orchestration/workunits/2026-09-29-orchestrator-mode-rework/orchestrator-mode-rework-decisions.md §3",
+  "note": "~/.agents/skills/orchestrator-mode/references/tiers.md is the human copy; this file is the closer's copy. Keep them in step. haiku stays rank 1 only so legacy Beads recorded with it still evaluate.",
+  "claude_ranks": { "haiku": 1, "sonnet": 2, "opus": 3, "fable": 4 },
+  "executor_rows": {
+    "sonnet": { "low": 1, "medium": 1, "high": 2, "xhigh": 2, "max": 2, "missing": 2 },
+    "opus":   { "low": 3, "medium": 3, "high": 4, "xhigh": 4, "max": 4, "missing": 4 },
+    "fable":  { "low": 5, "medium": 5, "high": 5, "xhigh": 5, "max": 5, "missing": 5 }
+  },
+  "codex_points": {
+    "gpt-6-sol@high": 1,
+    "gpt-5.6-sol@low": 2,
+    "gpt-5.6-sol@high": 3,
+    "gpt-6-astra@low": 4,
+    "gpt-6-astra@medium": 5
+  }
+}

@@ -30,6 +30,8 @@ fm="$(eb_read_frontmatter "$SCRIPT_DIR/lib" "$review")" \
 r_bead="$(printf '%s' "$fm" | jq -r '.bead // ""')"
 r_verdict="$(printf '%s' "$fm" | jq -r '.verdict // ""')"
 r_model="$(printf '%s' "$fm" | jq -r '.reviewer.model // ""')"
+r_effort="$(printf '%s' "$fm" | jq -r '.reviewer.effort // ""')"
+r_vendor="$(printf '%s' "$fm" | jq -r '.reviewer.vendor // ""')"
 r_spawn="$(printf '%s' "$fm" | jq -r '.spawn // ""')"
 r_prior="$(printf '%s' "$fm" | jq -r '.prior // empty')"
 
@@ -57,16 +59,10 @@ closing_report="${close_reason#accepted }"
   || die "'$review' 'prior' ('$r_prior') does not match the closing PASS report recorded in close_reason ('$closing_report'). Refusing."
 
 b_executor="$(printf '%s' "$bead" | jq -r '.metadata.executor.model // ""')"
+b_exec_effort="$(printf '%s' "$bead" | jq -r '.metadata.executor.effort // ""')"
 [[ -n "$b_executor" ]] || die "Bead $r_bead has no metadata 'executor.model'. Refusing — the tier rule cannot be evaluated."
-eb_model_valid "$r_model" || die "'$review' reviewer.model '$r_model' is not on the ladder (sonnet|opus|fable)."
-executor_rank="$(eb_model_rank "$b_executor")" || die "Bead $r_bead metadata executor.model '$b_executor' is not on the ladder. Refusing."
-reviewer_rank="$(eb_model_rank "$r_model")" || die "internal: bad reviewer model '$r_model'."
-top_rank="$(eb_model_rank fable)"
-if [[ "$executor_rank" == "$top_rank" ]]; then
-  (( reviewer_rank >= executor_rank )) || die "reviewer '$r_model' does not outrank executor '$b_executor'. Refusing."
-else
-  (( reviewer_rank > executor_rank )) || die "reviewer '$r_model' does not outrank executor '$b_executor' on the ladder. Refusing."
-fi
+reason_err="$(eb_reviewer_adequate "$b_executor" "$b_exec_effort" "$r_vendor" "$r_model" "$r_effort" 2>&1 >/dev/null)" \
+  || die "'$review' reviewer refused for Bead $r_bead: $reason_err. Refusing."
 
 bd reopen "$r_bead" --reason "reopened per FAIL review $review, prior $r_prior" >/dev/null \
   || die "'bd reopen $r_bead' failed. Fix the reported cause, then re-run; nothing else was changed."

@@ -10,23 +10,31 @@ die() { printf '%s: %s\n' "$SELF" "$1" >&2; exit "${2:-1}"; }
 # shellcheck source=lib/eb-common.sh
 source "$SCRIPT_DIR/lib/eb-common.sh"
 
-id=""; model_override=""
+id=""; model_override=""; effort_override=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --id)    id="${2-}"; shift 2 ;;
-    --model) model_override="${2-}"; shift 2 ;;
-    *) die "unknown flag '$1'. Flags: --id <bead-id> [--model sonnet|opus|fable]" ;;
+    --id)     id="${2-}"; shift 2 ;;
+    --model)  model_override="${2-}"; shift 2 ;;
+    --effort) effort_override="${2-}"; shift 2 ;;
+    *) die "unknown flag '$1'. Flags: --id <bead-id> [--model sonnet|opus|fable] [--effort low|medium|high|xhigh|max]" ;;
   esac
 done
 [[ -n "$id" ]] || die "missing required --id."
+if [[ -n "$effort_override" ]]; then
+  case "$effort_override" in
+    low|medium|high|xhigh|max) ;;
+    *) die "--effort must be low|medium|high|xhigh|max (got '$effort_override')." ;;
+  esac
+fi
 
 # design §13 Verification / decision 1: the claim records metadata executor.model. --model
 # overrides detection (an orchestrator on one model claims on behalf of a different executor).
-executor_model=""
+executor_model=""; executor_effort="$effort_override"
 if [[ -n "$model_override" ]]; then
   eb_model_valid "$model_override" \
     || die "--model must be sonnet|opus|fable (got '$model_override')."
   executor_model="$model_override"
+  # --model without --effort records no effort: the oracle's effort is the claiming session's.
 else
   executor_model="$(eb_detect_model || true)"
   if [[ -z "$executor_model" ]]; then
@@ -35,6 +43,7 @@ else
     fi
     die "the session model could not be detected (ua-model.sh reported no 'ok' state). Re-run with --model sonnet|opus|fable naming the executor's actual model."
   fi
+  [[ -n "$executor_effort" ]] || executor_effort="$(eb_detect_effort || true)"
 fi
 
 set +e
@@ -43,8 +52,9 @@ rc=$?
 set -e
 
 if [[ "$rc" -eq 0 ]]; then
-  eb_metadata_merge "$id" "$(jq -nc --arg m "$executor_model" '{"executor":{"model":$m}}')" \
-    || die "claim landed but recording metadata executor.model failed. Run: bd update $id --metadata '{\"executor\":{\"model\":\"$executor_model\"}}'"
+  frag="$(jq -nc --arg m "$executor_model" --arg e "$executor_effort" '{"executor":({"model":$m} + (if $e == "" then {} else {"effort":$e} end))}')"
+  eb_metadata_merge "$id" "$frag" \
+    || die "claim landed but recording metadata executor.model failed. Run: bd update $id --metadata '$frag'"
   printf 'CLAIMED\n'
   exit 0
 fi
