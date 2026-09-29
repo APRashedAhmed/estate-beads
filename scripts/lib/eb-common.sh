@@ -36,7 +36,10 @@ eb_metadata_merge() {  # <id> <json-fragment>
 # sonnet < opus < fable. Returns the numeric rank on stdout, or empty + rc=1 for an
 # unrecognized name. `haiku` stays rank 1 so Beads whose recorded executor.model is haiku still
 # evaluate; it is no longer a valid choice for new claims or reviewers (see eb_model_valid).
-eb_ladder_file() { printf '%s\n' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/verifier-ladder.json"; }
+eb_ladder_file() {
+  [[ -n "${EB_LADDER_FILE:-}" ]] && { printf '%s\n' "$EB_LADDER_FILE"; return 0; }
+  printf '%s\n' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/verifier-ladder.json"
+}
 
 eb_model_rank() {
   local r
@@ -57,13 +60,15 @@ eb_model_valid() {
 eb_reviewer_adequate() {
   local xm="${1:-}" xe="${2:-}" vendor="${3:-}" rm="${4:-}" re="${5:-}" lf xr rr top need
   lf="$(eb_ladder_file)"
+  jq -e . "$lf" >/dev/null 2>&1 || { printf "verifier ladder '%s' is missing or unreadable (plugin install defect)\n" "$lf" >&2; return 1; }
   [[ -n "$vendor" ]] || vendor=claude
   case "$vendor" in
     claude)
       eb_model_valid "$rm" || { printf "reviewer.model '%s' is not on the claude ladder (sonnet|opus|fable)\n" "$rm" >&2; return 1; }
       xr="$(eb_model_rank "$xm")" || { printf "executor.model '%s' is not on the ladder\n" "$xm" >&2; return 1; }
-      rr="$(eb_model_rank "$rm")" || return 1
-      top="$(eb_model_rank fable)"
+      rr="$(eb_model_rank "$rm")" || { printf "reviewer.model '%s' has no rank in the ladder file\n" "$rm" >&2; return 1; }
+      top="$(eb_model_rank fable)" || { printf "ladder file has no rank for 'fable'\n" >&2; return 1; }
+      [[ "$xr" =~ ^[0-9]+$ && "$rr" =~ ^[0-9]+$ && "$top" =~ ^[0-9]+$ ]] || { printf "verifier ladder '%s' has a non-numeric claude rank\n" "$lf" >&2; return 1; }
       if [[ "$xr" == "$top" ]]; then
         (( rr >= xr )) || { printf "reviewer '%s' is below executor '%s'; a top-tier executor needs a claude reviewer of fable\n" "$rm" "$xm" >&2; return 1; }
       else
@@ -72,12 +77,13 @@ eb_reviewer_adequate() {
       ;;
     codex)
       [[ -n "$rm" && -n "$re" ]] || { printf "codex reviewer needs both reviewer.model and reviewer.effort\n" >&2; return 1; }
-      rr="$(jq -r --arg k "$rm@$re" '.codex_points[$k] // empty' "$lf")"
+      rr="$(jq -r --arg k "$rm@$re" '.codex_points[$k] // empty' "$lf" 2>/dev/null)"
       [[ -n "$rr" ]] || { printf "'%s@%s' is not on the codex verifier ladder\n" "$rm" "$re" >&2; return 1; }
-      xr="$(jq -r --arg m "$xm" --arg e "${xe:-missing}" '.executor_rows[$m] | if . == null then empty else (.[$e] // .missing) end' "$lf")"
+      xr="$(jq -r --arg m "$xm" --arg e "${xe:-missing}" '.executor_rows[$m] | if . == null then empty else (.[$e] // .missing) end' "$lf" 2>/dev/null)"
       [[ -n "$xr" ]] || { printf "executor.model '%s' has no codex verifier row\n" "$xm" >&2; return 1; }
+      [[ "$xr" =~ ^[0-9]+$ && "$rr" =~ ^[0-9]+$ ]] || { printf "verifier ladder '%s' has a non-numeric row or point value\n" "$lf" >&2; return 1; }
       if (( rr < xr )); then
-        need="$(jq -r --argjson x "$xr" '.codex_points | to_entries | map(select(.value == $x)) | .[0].key' "$lf")"
+        need="$(jq -r --argjson x "$xr" '.codex_points | to_entries | map(select(.value == $x)) | .[0].key' "$lf" 2>/dev/null)"
         local alt="a claude reviewer one tier above the executor"
         [[ "$xm" == fable ]] && alt="a fable reviewer"
         printf "codex '%s@%s' (point %s) is below executor '%s/%s' (row %s); lowest adequate codex point is %s (or %s)\n" "$rm" "$re" "$rr" "$xm" "${xe:-<no effort>}" "$xr" "$need" "$alt" >&2

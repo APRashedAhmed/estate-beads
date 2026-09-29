@@ -54,4 +54,29 @@ case "$msg" in *"claude reviewer one tier above"*) assert_eq "fable refusal omit
 msg="$(eb_reviewer_adequate opus high codex gpt-5.6-sol high 2>&1 >/dev/null)"
 assert_contains "non-fable refusal keeps the one-tier-above hint" "$msg" "one tier above the executor"
 
+# --- ladder-file robustness (EB_LADDER_FILE override) ---------------------------------------------
+ltmp="$(mktemp -d)"; trap 'rm -rf "$tmpbin" "$ltmp"' EXIT
+real_ladder="$ROOT/scripts/lib/verifier-ladder.json"
+for v in claude codex; do
+  if [[ $v == claude ]]; then a=(sonnet low claude opus ""); else a=(sonnet low codex gpt-6-sol high); fi
+  msg="$(EB_LADDER_FILE="$ltmp/nope.json" eb_reviewer_adequate "${a[@]}" 2>&1 >/dev/null)"; rc=$?
+  assert_rc "missing ladder ($v) refused" 1 "$([[ $rc != 0 ]] && echo 1 || echo 0)"
+  assert_contains "missing ladder ($v) names the ladder file" "$msg" "$ltmp/nope.json"
+  case "$msg" in *"jq:"*) assert_eq "missing ladder ($v) has no raw jq text" ok bad ;; *) assert_eq "missing ladder ($v) has no raw jq text" ok ok ;; esac
+  printf '{ "claude_ranks": ' > "$ltmp/bad.json"
+  msg="$(EB_LADDER_FILE="$ltmp/bad.json" eb_reviewer_adequate "${a[@]}" 2>&1 >/dev/null)"; rc=$?
+  assert_rc "malformed ladder ($v) refused" 1 "$([[ $rc != 0 ]] && echo 1 || echo 0)"
+  assert_contains "malformed ladder ($v) names the ladder file" "$msg" "$ltmp/bad.json"
+  case "$msg" in *"jq:"*) assert_eq "malformed ladder ($v) has no raw jq text" ok bad ;; *) assert_eq "malformed ladder ($v) has no raw jq text" ok ok ;; esac
+done
+jq '.executor_rows.opus.missing = "x" | .codex_points["a@b"] = "y"' "$real_ladder" > "$ltmp/badtype.json"
+EB_LADDER_FILE="$ltmp/badtype.json" eb_reviewer_adequate opus "" codex a b >/dev/null 2>&1; rc=$?
+assert_rc "non-numeric ladder value refused (codex)" 1 "$([[ $rc != 0 ]] && echo 1 || echo 0)"
+jq '.claude_ranks.opus = "x"' "$real_ladder" > "$ltmp/badtype2.json"
+EB_LADDER_FILE="$ltmp/badtype2.json" eb_reviewer_adequate opus "" claude opus "" >/dev/null 2>&1; rc=$?
+assert_rc "non-numeric ladder value refused (claude)" 1 "$([[ $rc != 0 ]] && echo 1 || echo 0)"
+jq 'del(.claude_ranks.opus)' "$real_ladder" > "$ltmp/norank.json"
+msg="$(EB_LADDER_FILE="$ltmp/norank.json" eb_reviewer_adequate sonnet low claude opus "" 2>&1 >/dev/null)"
+assert_contains "missing reviewer rank gives a reason" "$msg" "has no rank"
+
 eb_report
