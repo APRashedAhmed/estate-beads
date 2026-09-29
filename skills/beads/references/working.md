@@ -14,7 +14,7 @@ only what survives as judgment; the guard's own deny message carries the rest.
 
 1. **Find work.** `bd ready` filtered to your project or your assignment. Work you were handed beats
    self-selection.
-2. **Claim before you start.** Run `scripts/bead-claim.sh --id <id> [--model <haiku|sonnet|opus|fable>]`
+2. **Claim before you start.** Run `scripts/bead-claim.sh --id <id> [--model <sonnet|opus|fable>]`
    and branch on its one word: `CLAIMED` → proceed; `LOST` → pick other work. Never work an unclaimed
    or other-claimed Bead. A Bead whose `tier:` is above your own is not yours to claim. Pass `--model`
    when the session model cannot be auto-detected — the script refuses the claim without it, because

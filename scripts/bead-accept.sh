@@ -175,16 +175,16 @@ b_executor="$(printf '%s' "$bead" | jq -r '.metadata.executor.model // ""')"
 [[ "$b_status" == "in_progress" && "$b_pending" == "1" ]] \
   || die "Bead $r_bead is not acceptance-pending (status=$b_status). A review verdict only closes a Bead already reported ACCEPTANCE-PENDING."
 [[ -n "$b_accept" ]] || die "Bead $r_bead does not carry exactly one 'accept:' label. Run check-bead.sh --id $r_bead, fix the labels, then re-run."
-[[ -n "$b_executor" ]] || die "Bead $r_bead has no metadata 'executor.model' (claimed before bead-claim.sh recorded it, or claimed off-script). Refusing — the tier rule cannot be evaluated. Set it with: bd update $r_bead --metadata '{\"executor\":{\"model\":\"<haiku|sonnet|opus|fable>\"}}', or re-claim through bead-claim.sh."
+[[ -n "$b_executor" ]] || die "Bead $r_bead has no metadata 'executor.model' (claimed before bead-claim.sh recorded it, or claimed off-script). Refusing — the tier rule cannot be evaluated. Set it with: bd update $r_bead --metadata '{\"executor\":{\"model\":\"<sonnet|opus|fable>\"}}', or re-claim through bead-claim.sh."
 
-eb_model_valid "$r_model" || die "'$review' reviewer.model '$r_model' is not on the ladder (haiku|sonnet|opus|fable)."
+eb_model_valid "$r_model" || die "'$review' reviewer.model '$r_model' is not on the ladder (sonnet|opus|fable)."
 executor_rank="$(eb_model_rank "$b_executor")" || die "Bead $r_bead metadata executor.model '$b_executor' is not on the ladder. Refusing."
 reviewer_rank="$(eb_model_rank "$r_model")" || die "internal: bad reviewer model '$r_model'."
 top_rank="$(eb_model_rank fable)"
 if [[ "$executor_rank" == "$top_rank" ]]; then
   (( reviewer_rank >= executor_rank )) || die "reviewer '$r_model' does not outrank executor '$b_executor' (top-tier executor requires a same-or-higher-tier reviewer). Refusing."
 else
-  (( reviewer_rank > executor_rank )) || die "reviewer '$r_model' does not outrank executor '$b_executor' on the ladder (haiku<sonnet<opus<fable). Refusing."
+  (( reviewer_rank > executor_rank )) || die "reviewer '$r_model' does not outrank executor '$b_executor' on the ladder (sonnet<opus<fable). Refusing."
 fi
 
 # Evidence chain: follow `prior` recursively through report files, oldest first, this report last.

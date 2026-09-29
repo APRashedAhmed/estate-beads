@@ -15,7 +15,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --id)    id="${2-}"; shift 2 ;;
     --model) model_override="${2-}"; shift 2 ;;
-    *) die "unknown flag '$1'. Flags: --id <bead-id> [--model haiku|sonnet|opus|fable]" ;;
+    *) die "unknown flag '$1'. Flags: --id <bead-id> [--model sonnet|opus|fable]" ;;
   esac
 done
 [[ -n "$id" ]] || die "missing required --id."
@@ -25,12 +25,12 @@ done
 executor_model=""
 if [[ -n "$model_override" ]]; then
   eb_model_valid "$model_override" \
-    || die "--model must be haiku|sonnet|opus|fable (got '$model_override')."
+    || die "--model must be sonnet|opus|fable (got '$model_override')."
   executor_model="$model_override"
 else
   executor_model="$(eb_detect_model || true)"
   if [[ -z "$executor_model" ]]; then
-    die "the session model could not be detected (ua-model.sh reported no 'ok' state). Re-run with --model haiku|sonnet|opus|fable naming the executor's actual model."
+    die "the session model could not be detected (ua-model.sh reported no 'ok' state). Re-run with --model sonnet|opus|fable naming the executor's actual model."
   fi
 fi
 

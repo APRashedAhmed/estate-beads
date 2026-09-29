@@ -58,7 +58,7 @@ closing_report="${close_reason#accepted }"
 
 b_executor="$(printf '%s' "$bead" | jq -r '.metadata.executor.model // ""')"
 [[ -n "$b_executor" ]] || die "Bead $r_bead has no metadata 'executor.model'. Refusing — the tier rule cannot be evaluated."
-eb_model_valid "$r_model" || die "'$review' reviewer.model '$r_model' is not on the ladder (haiku|sonnet|opus|fable)."
+eb_model_valid "$r_model" || die "'$review' reviewer.model '$r_model' is not on the ladder (sonnet|opus|fable)."
 executor_rank="$(eb_model_rank "$b_executor")" || die "Bead $r_bead metadata executor.model '$b_executor' is not on the ladder. Refusing."
 reviewer_rank="$(eb_model_rank "$r_model")" || die "internal: bad reviewer model '$r_model'."
 top_rank="$(eb_model_rank fable)"

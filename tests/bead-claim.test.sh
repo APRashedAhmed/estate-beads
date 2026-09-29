@@ -47,9 +47,16 @@ assert_eq "the refused Bead was never claimed" "open" "$status4"
 # --- --model overrides a DETECTED (not just absent) model (MINOR-2, review pa-s2s.3-review-1) ---
 id5="$(scripts/create-bead.sh --title "ModelDetectedButOverridden" --description d --acceptance a --project p --accept evidence --recognized-by x)"
 EB_MODEL_ORACLE="$ROOT/tests/fixtures/fake-ua-model-oracle.sh" EB_MODEL_ORACLE_FAMILY=sonnet \
-  scripts/bead-claim.sh --id "$id5" --model haiku >/dev/null
+  scripts/bead-claim.sh --id "$id5" --model opus >/dev/null
 got5="$(bd show --json "$id5" 2>/dev/null | jq -r '.[0].metadata.executor.model')"
-assert_eq "--model (haiku) overrides a detected 'ok' oracle family (sonnet)" "haiku" "$got5"
+assert_eq "--model (opus) overrides a detected 'ok' oracle family (sonnet)" "opus" "$got5"
+
+# --- haiku is off the ladder for new claims ---
+id6="$(scripts/create-bead.sh --title "HaikuRefused" --description d --acceptance a --project p --accept evidence --recognized-by x)"
+out6="$(scripts/bead-claim.sh --id "$id6" --model haiku 2>&1)"; rc=$?
+assert_rc "--model haiku is refused for a new claim" 1 "$rc"
+status6="$(bd show --json "$id6" 2>/dev/null | jq -r '.[0].status')"
+assert_eq "the haiku-refused Bead was never claimed" "open" "$status6"
 
 # --- an oracle in a non-ok state (stale/absent) is treated as undetectable, never guessed --------
 cat > "$scratch/stale-oracle.sh" <<'EOF'

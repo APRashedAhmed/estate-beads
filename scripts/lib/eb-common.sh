@@ -33,8 +33,9 @@ eb_metadata_merge() {  # <id> <json-fragment>
 }
 
 # --- Model ladder (design §13, decision 1/4) ------------------------------------------------
-# haiku < sonnet < opus < fable. Returns the numeric rank on stdout, or empty + rc=1 for an
-# unrecognized name.
+# sonnet < opus < fable. Returns the numeric rank on stdout, or empty + rc=1 for an
+# unrecognized name. `haiku` stays rank 1 so Beads whose recorded executor.model is haiku still
+# evaluate; it is no longer a valid choice for new claims or reviewers (see eb_model_valid).
 eb_model_rank() {
   case "${1:-}" in
     haiku)  printf '1\n' ;;
@@ -46,7 +47,7 @@ eb_model_rank() {
 }
 
 eb_model_valid() {
-  case "${1:-}" in haiku|sonnet|opus|fable) return 0 ;; *) return 1 ;; esac
+  case "${1:-}" in sonnet|opus|fable) return 0 ;; *) return 1 ;; esac
 }
 
 # --- Model detection (decision 1) -----------------------------------------------------------
@@ -55,7 +56,7 @@ eb_model_valid() {
 # ${CLAUDE_CONFIG_DIR:-$HOME/.claude} — m5, fix round 2 residual: this estate is per-account
 # config-dir keyed, same as the sweep's transcript root in eb-session-start.sh; a hardcoded
 # $HOME/.claude here would look for another account's oracle state file).
-# Prints the ladder name (haiku|sonnet|opus|fable) on stdout and returns 0 when the oracle
+# Prints the ladder name (sonnet|opus|fable) on stdout and returns 0 when the oracle
 # reports state "ok" and a recognized family; returns 1 (prints nothing) otherwise — every
 # non-ok oracle state nulls the trusted keys by the oracle's own contract, so "not ok" is
 # always treated as undetectable, never as a confidently-wrong guess.
