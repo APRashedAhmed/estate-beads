@@ -103,11 +103,13 @@ assert_eq "the invalid-effort Bead was never claimed" "open" "$(bd show --json "
 # --- stale effort on re-claim: a claim recording no effort drops the earlier one --------------------
 ide5="$(mkbead EffortStale)"
 scripts/bead-claim.sh --id "$ide5" --model opus --effort high >/dev/null
+bd update "$ide5" --metadata "$(bd show --json "$ide5" 2>/dev/null | jq -c '.[0].metadata.executor + {"foo":"bar"} | {"executor":.}')" >/dev/null
 assert_eq "first claim records effort high" "high" "$(effort_of "$ide5")"
 scripts/bead-release.sh --id "$ide5" --note "test release" >/dev/null
 scripts/bead-claim.sh --id "$ide5" --model opus >/dev/null
 assert_eq "re-claim with no effort removes the stale executor.effort" "none" "$(effort_of "$ide5")"
 assert_eq "the re-claim keeps executor.model" "opus" "$(bd show --json "$ide5" 2>/dev/null | jq -r '.[0].metadata.executor.model')"
+assert_eq "the re-claim keeps other executor keys" "bar" "$(bd show --json "$ide5" 2>/dev/null | jq -r '.[0].metadata.executor.foo // "none"')"
 assert_eq "the re-claim keeps unrelated metadata" "x" "$(bd show --json "$ide5" 2>/dev/null | jq -r '.[0].metadata["recognized-by"]')"
 
 eb_report

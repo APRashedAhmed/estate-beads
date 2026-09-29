@@ -179,6 +179,14 @@ b_exec_effort="$(printf '%s' "$bead" | jq -r '.metadata.executor.effort // ""')"
 [[ -n "$b_accept" ]] || die "Bead $r_bead does not carry exactly one 'accept:' label. Run check-bead.sh --id $r_bead, fix the labels, then re-run."
 [[ -n "$b_executor" ]] || die "Bead $r_bead has no metadata 'executor.model' (claimed before bead-claim.sh recorded it, or claimed off-script). Refusing — the tier rule cannot be evaluated. Set it with: bd update $r_bead --metadata '{\"executor\":{\"model\":\"<sonnet|opus|fable>\"}}', or re-claim through bead-claim.sh."
 
+# Visibility for the EB_LADDER_FILE override (review pa-ym1-u2-check-1 MINOR-1, option b): say so on
+# stderr and carry the path into the EVIDENCE line below.
+ladder_note=""
+if [[ -n "${EB_LADDER_FILE:-}" ]]; then
+  printf 'ladder override: %s\n' "$EB_LADDER_FILE" >&2
+  ladder_note=" (ladder override: ${EB_LADDER_FILE})"
+fi
+
 reason_err="$(eb_reviewer_adequate "$b_executor" "$b_exec_effort" "$r_vendor" "$r_model" "$r_effort" 2>&1 >/dev/null)" \
   || die "'$review' reviewer refused for Bead $r_bead: $reason_err. Refusing."
 
@@ -197,7 +205,7 @@ done
 
 case "$r_verdict" in
   PASS)
-    evidence_line="EVIDENCE: $(printf '%s\n' "${chain[@]}" | paste -sd';' -)"
+    evidence_line="EVIDENCE: $(printf '%s\n' "${chain[@]}" | paste -sd';' -)${ladder_note}"
     case "$b_accept" in
       evidence|independent)
         # These two modes are the ones that call `bd close` below — check open blockers BEFORE

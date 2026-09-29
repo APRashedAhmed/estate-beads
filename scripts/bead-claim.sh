@@ -60,9 +60,9 @@ if [[ "$rc" -eq 0 ]]; then
     # (a stale effort would pick the wrong verifier row). bd's --metadata replaces the whole
     # top-level `executor` object, and a dotted --unset-metadata does not reach it.
     execobj="$(bd show --json "$id" 2>/dev/null | jq -c '.[0].metadata.executor // {} | del(.effort)')" \
-      || die "claim landed but clearing a stale executor.effort failed (bd show). Run: bd update $id --metadata '{\"executor\":{\"model\":\"$executor_model\"}}'"
+      || die "claim landed but clearing a stale executor.effort failed (bd show). Re-run: $SCRIPT_DIR/bead-release.sh --id $id, then bead-claim.sh --id $id --model $executor_model"
     bd update "$id" --metadata "$(jq -nc --argjson x "$execobj" '{"executor":$x}')" >/dev/null \
-      || die "claim landed but clearing a stale executor.effort failed. Run: bd update $id --metadata '{\"executor\":{\"model\":\"$executor_model\"}}'"
+      || die "claim landed but clearing a stale executor.effort failed. Run: bd update $id --metadata '$(jq -nc --argjson x "$execobj" '{"executor":$x}')'"
   fi
   printf 'CLAIMED\n'
   exit 0

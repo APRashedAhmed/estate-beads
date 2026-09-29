@@ -253,4 +253,13 @@ r="$REPORTS/codex-effort-row.md"; eb_write_review_codex "$r" "$id" PASS gpt-6-so
 out="$(scripts/bead-accept.sh --review "$r" 2>&1)"; rc=$?
 assert_rc "sonnet/high executor row 2 refuses codex point 1" 1 "$rc"
 
+# --- EB_LADDER_FILE override is visible (review pa-ym1-u2-check-1 MINOR-1) ---------------------------
+id="$(report_pending "LadderOverride" independent sonnet low)"
+r="$REPORTS/ladder-override.md"; eb_write_review "$r" "$id" PASS opus fresh ""
+errf="$scratch/ladder-override.err"
+out="$(EB_LADDER_FILE="$ROOT/scripts/lib/verifier-ladder.json" scripts/bead-accept.sh --review "$r" 2>"$errf")"; rc=$?
+assert_rc "an accept under EB_LADDER_FILE succeeds" 0 "$rc"
+assert_contains "the override is announced on stderr" "$(cat "$errf")" "ladder override: $ROOT/scripts/lib/verifier-ladder.json"
+assert_contains "the ladder path is recorded in the EVIDENCE line" "$(bd show --json "$id" 2>/dev/null | jq -r '.[0].notes')" "ladder override: $ROOT/scripts/lib/verifier-ladder.json"
+
 eb_report

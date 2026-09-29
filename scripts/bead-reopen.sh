@@ -61,17 +61,26 @@ closing_report="${close_reason#accepted }"
 b_executor="$(printf '%s' "$bead" | jq -r '.metadata.executor.model // ""')"
 b_exec_effort="$(printf '%s' "$bead" | jq -r '.metadata.executor.effort // ""')"
 [[ -n "$b_executor" ]] || die "Bead $r_bead has no metadata 'executor.model'. Refusing — the tier rule cannot be evaluated."
+# Visibility for the EB_LADDER_FILE override (review pa-ym1-u2-check-1 MINOR-1, option b).
+reopen_reason="reopened per FAIL review $review, prior $r_prior"
+in_progress_line="reopened on a FAIL review"
+if [[ -n "${EB_LADDER_FILE:-}" ]]; then
+  printf 'ladder override: %s\n' "$EB_LADDER_FILE" >&2
+  reopen_reason="${reopen_reason}, ladder override: ${EB_LADDER_FILE}"
+  in_progress_line="${in_progress_line} (ladder override: ${EB_LADDER_FILE})"
+fi
+
 reason_err="$(eb_reviewer_adequate "$b_executor" "$b_exec_effort" "$r_vendor" "$r_model" "$r_effort" 2>&1 >/dev/null)" \
   || die "'$review' reviewer refused for Bead $r_bead: $reason_err. Refusing."
 
-bd reopen "$r_bead" --reason "reopened per FAIL review $review, prior $r_prior" >/dev/null \
+bd reopen "$r_bead" --reason "$reopen_reason" >/dev/null \
   || die "'bd reopen $r_bead' failed. Fix the reported cause, then re-run; nothing else was changed."
 
 # m1 (review pa-s2s.8-review-1): --preserve keeps the existing COMPLETED line and any other
 # surviving line (notably EVIDENCE:) verbatim; a bare --completed "(none)" call (no --preserve)
 # clobbered them on every reopen, dropping the acceptance trail the closer had just written.
 "$SCRIPT_DIR/bead-progress.sh" --id "$r_bead" --preserve \
-  --in-progress "reopened on a FAIL review" \
+  --in-progress "$in_progress_line" \
   --next "$review" \
   || die "the Bead was reopened but the rule-5 NEXT rewrite failed. Run: $SCRIPT_DIR/bead-progress.sh --id $r_bead --preserve --next '$review'"
 

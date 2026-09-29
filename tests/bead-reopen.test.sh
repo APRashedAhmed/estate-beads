@@ -84,7 +84,10 @@ assert_rc "a below-ladder codex reviewer (opus exec, point 1) is refused on reop
 assert_eq "the refused codex reopen leaves the Bead closed" "closed" "$(bd show --json "$id5" 2>/dev/null | jq -r '.[0].status')"
 
 cxon="$REPORTS/codex-on.md"; eb_write_review_codex "$cxon" "$id5" FAIL gpt-6-astra low fresh "$pass5"
-out="$(scripts/bead-reopen.sh --review "$cxon" 2>/dev/null)"; rc=$?
+errf="$scratch/reopen-override.err"
+out="$(EB_LADDER_FILE="$ROOT/scripts/lib/verifier-ladder.json" scripts/bead-reopen.sh --review "$cxon" 2>"$errf")"; rc=$?
+assert_contains "the ladder override is announced on stderr" "$(cat "$errf")" "ladder override: $ROOT/scripts/lib/verifier-ladder.json"
+assert_contains "the ladder path is recorded in the reopen note" "$(bd show --json "$id5" 2>/dev/null | jq -r '.[0].notes')" "ladder override: $ROOT/scripts/lib/verifier-ladder.json"
 assert_rc "an on-ladder codex reviewer (opus exec, astra@low) reopens" 0 "$rc"
 assert_eq "the on-ladder codex reopen prints REOPENED" "REOPENED" "$out"
 assert_eq "the on-ladder codex reopen returns the Bead to open" "open" "$(bd show --json "$id5" 2>/dev/null | jq -r '.[0].status')"
