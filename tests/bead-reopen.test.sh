@@ -70,4 +70,23 @@ assert_rc "a non-fresh ('spawn: fork') review is refused on reopen" 1 "$rc"
 bead4b="$(bd show --json "$id4" 2>/dev/null | jq -c '.[0]')"
 assert_eq "the refused non-fresh reopen leaves the Bead closed" "closed" "$(printf '%s' "$bead4b" | jq -r '.status')"
 
+# --- codex reviewers on reopen ---------------------------------------------------------------------
+# Close an opus Bead with a fable reviewer, then reopen with codex reviewers.
+id5="$(scripts/create-bead.sh --title "ReopenCodex" --description d --acceptance a --project p --accept independent --recognized-by x)"
+scripts/bead-claim.sh --id "$id5" --model opus >/dev/null
+scripts/bead-report-success.sh --id "$id5" --evidence "initial" >/dev/null
+pass5="$REPORTS/pass5.md"; eb_write_review "$pass5" "$id5" PASS fable fresh ""
+scripts/bead-accept.sh --review "$pass5" >/dev/null
+
+cxbelow="$REPORTS/codex-below.md"; eb_write_review_codex "$cxbelow" "$id5" FAIL gpt-6-sol high fresh "$pass5"
+out="$(scripts/bead-reopen.sh --review "$cxbelow" 2>&1)"; rc=$?
+assert_rc "a below-ladder codex reviewer (opus exec, point 1) is refused on reopen" 1 "$rc"
+assert_eq "the refused codex reopen leaves the Bead closed" "closed" "$(bd show --json "$id5" 2>/dev/null | jq -r '.[0].status')"
+
+cxon="$REPORTS/codex-on.md"; eb_write_review_codex "$cxon" "$id5" FAIL gpt-6-astra low fresh "$pass5"
+out="$(scripts/bead-reopen.sh --review "$cxon" 2>/dev/null)"; rc=$?
+assert_rc "an on-ladder codex reviewer (opus exec, astra@low) reopens" 0 "$rc"
+assert_eq "the on-ladder codex reopen prints REOPENED" "REOPENED" "$out"
+assert_eq "the on-ladder codex reopen returns the Bead to open" "open" "$(bd show --json "$id5" 2>/dev/null | jq -r '.[0].status')"
+
 eb_report

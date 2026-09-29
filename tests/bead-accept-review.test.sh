@@ -16,10 +16,10 @@ trap 'rm -rf "$scratch"' EXIT
 export BEADS_ACTOR=actor1
 REPORTS="$scratch/reports"; mkdir -p "$REPORTS"
 
-report_pending() {  # <title> <accept-mode> <model> -> prints the Bead id
-  local title="$1" mode="$2" model="$3" id
+report_pending() {  # <title> <accept-mode> <model> [effort] -> prints the Bead id
+  local title="$1" mode="$2" model="$3" effort="${4:-}" id
   id="$(scripts/create-bead.sh --title "$title" --description d --acceptance a --project p --accept "$mode" --recognized-by x)"
-  scripts/bead-claim.sh --id "$id" --model "$model" >/dev/null
+  scripts/bead-claim.sh --id "$id" --model "$model" ${effort:+--effort "$effort"} >/dev/null
   if [[ "$mode" == "evidence" ]]; then
     # accept:evidence closes itself inside bead-report-success.sh — put it into
     # acceptance-pending directly so a review verdict has something to close.
@@ -210,5 +210,47 @@ for mode in evidence independent; do
   assert_contains "notes record who closed it ($mode)" "$(printf '%s' "$bead" | jq -r '.notes')" "closed by closer-actor"
 done
 export BEADS_ACTOR=actor1
+
+# --- codex reviewers on the verifier ladder ---------------------------------------------------------
+id="$(report_pending "CodexOnLadder" independent sonnet low)"
+r="$REPORTS/codex-pass.md"; eb_write_review_codex "$r" "$id" PASS gpt-6-sol high fresh ""
+out="$(scripts/bead-accept.sh --review "$r")"; rc=$?
+assert_rc "on-ladder codex PASS exits 0" 0 "$rc"
+assert_eq "on-ladder codex PASS closes" "CLOSED" "$out"
+assert_eq "on-ladder codex PASS: status closed" "closed" "$(bd show --json "$id" 2>/dev/null | jq -r '.[0].status')"
+
+id="$(report_pending "CodexBelow" independent opus)"
+r="$REPORTS/codex-below.md"; eb_write_review_codex "$r" "$id" PASS gpt-6-sol high fresh ""
+out="$(scripts/bead-accept.sh --review "$r" 2>&1)"; rc=$?
+assert_rc "below-ladder codex (opus exec, point 1) is refused" 1 "$rc"
+bead="$(bd show --json "$id" 2>/dev/null | jq -c '.[0]')"
+assert_eq "below-ladder refusal leaves the Bead in_progress" "in_progress" "$(printf '%s' "$bead" | jq -r '.status')"
+assert_contains "below-ladder refusal leaves it acceptance-pending" "$(printf '%s' "$bead" | jq -c '.labels')" "acceptance-pending"
+
+id="$(report_pending "CodexUnknown" independent sonnet)"
+r="$REPORTS/codex-unknown.md"; eb_write_review_codex "$r" "$id" PASS gpt-9-nova high fresh ""
+out="$(scripts/bead-accept.sh --review "$r" 2>&1)"; rc=$?
+assert_rc "unknown codex model is refused" 1 "$rc"
+assert_contains "unknown codex refusal names the ladder" "$out" "not on the codex verifier ladder"
+
+id="$(report_pending "CodexOperator" operator sonnet low)"
+r="$REPORTS/codex-operator.md"; eb_write_review_codex "$r" "$id" PASS gpt-6-sol high fresh ""
+out="$(scripts/bead-accept.sh --review "$r")"; rc=$?
+assert_rc "codex PASS on accept:operator exits 0" 0 "$rc"
+assert_eq "codex PASS on accept:operator prints ACCEPTANCE-PENDING operator" "ACCEPTANCE-PENDING operator" "$out"
+assert_eq "codex PASS on accept:operator stays in_progress" "in_progress" "$(bd show --json "$id" 2>/dev/null | jq -r '.[0].status')"
+
+id="$(report_pending "CodexFail" independent sonnet low)"
+r="$REPORTS/codex-fail.md"; eb_write_review_codex "$r" "$id" FAIL gpt-6-sol high fresh ""
+out="$(scripts/bead-accept.sh --review "$r")"; rc=$?
+assert_eq "codex FAIL decrements budget (default cycles 2 -> FAILED 1)" "FAILED 1" "$out"
+assert_eq "codex FAIL leaves the Bead in_progress" "in_progress" "$(bd show --json "$id" 2>/dev/null | jq -r '.[0].status')"
+
+# executor effort recorded at claim moves the row: sonnet/high needs point 2, so point 1 is refused
+id="$(report_pending "CodexEffortRow" independent sonnet high)"
+assert_eq "claim recorded executor.effort high" "high" "$(bd show --json "$id" 2>/dev/null | jq -r '.[0].metadata.executor.effort')"
+r="$REPORTS/codex-effort-row.md"; eb_write_review_codex "$r" "$id" PASS gpt-6-sol high fresh ""
+out="$(scripts/bead-accept.sh --review "$r" 2>&1)"; rc=$?
+assert_rc "sonnet/high executor row 2 refuses codex point 1" 1 "$rc"
 
 eb_report

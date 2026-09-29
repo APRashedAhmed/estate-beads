@@ -75,4 +75,39 @@ chmod +x "$scratch/stale-oracle.sh"
 out="$(EB_MODEL_ORACLE="$scratch/stale-oracle.sh" scripts/bead-claim.sh --id "$id4" 2>&1)"; rc=$?
 assert_rc "a non-'ok' oracle state is treated as undetectable, not a guess" 1 "$rc"
 
+# --- executor.effort recording ---------------------------------------------------------------------
+mkbead() { scripts/create-bead.sh --title "$1" --description d --acceptance a --project p --accept evidence --recognized-by x; }
+effort_of() { bd show --json "$1" 2>/dev/null | jq -r '.[0].metadata.executor.effort // "none"'; }
+
+ide1="$(mkbead EffortFlag)"
+scripts/bead-claim.sh --id "$ide1" --model opus --effort high >/dev/null
+assert_eq "--effort is recorded as executor.effort" "high" "$(effort_of "$ide1")"
+assert_eq "--effort leaves executor.model intact" "opus" "$(bd show --json "$ide1" 2>/dev/null | jq -r '.[0].metadata.executor.model')"
+
+ide2="$(mkbead EffortOracle)"
+EB_MODEL_ORACLE="$ROOT/tests/fixtures/fake-ua-model-oracle.sh" EB_MODEL_ORACLE_FAMILY=opus \
+  scripts/bead-claim.sh --id "$ide2" >/dev/null
+assert_eq "the oracle's effort is recorded when the model comes from the oracle" "medium" "$(effort_of "$ide2")"
+
+ide3="$(mkbead EffortModelOnly)"
+EB_MODEL_ORACLE="$ROOT/tests/fixtures/fake-ua-model-oracle.sh" EB_MODEL_ORACLE_FAMILY=opus \
+  scripts/bead-claim.sh --id "$ide3" --model sonnet >/dev/null
+assert_eq "--model without --effort records no effort" "none" "$(effort_of "$ide3")"
+
+ide4="$(mkbead EffortInvalid)"
+out="$(scripts/bead-claim.sh --id "$ide4" --model opus --effort turbo 2>&1)"; rc=$?
+assert_rc "an invalid --effort is refused" 1 "$rc"
+assert_contains "the refusal lists the allowed efforts" "$out" "low|medium|high|xhigh|max"
+assert_eq "the invalid-effort Bead was never claimed" "open" "$(bd show --json "$ide4" 2>/dev/null | jq -r '.[0].status')"
+
+# --- stale effort on re-claim: a claim recording no effort drops the earlier one --------------------
+ide5="$(mkbead EffortStale)"
+scripts/bead-claim.sh --id "$ide5" --model opus --effort high >/dev/null
+assert_eq "first claim records effort high" "high" "$(effort_of "$ide5")"
+scripts/bead-release.sh --id "$ide5" --note "test release" >/dev/null
+scripts/bead-claim.sh --id "$ide5" --model opus >/dev/null
+assert_eq "re-claim with no effort removes the stale executor.effort" "none" "$(effort_of "$ide5")"
+assert_eq "the re-claim keeps executor.model" "opus" "$(bd show --json "$ide5" 2>/dev/null | jq -r '.[0].metadata.executor.model')"
+assert_eq "the re-claim keeps unrelated metadata" "x" "$(bd show --json "$ide5" 2>/dev/null | jq -r '.[0].metadata["recognized-by"]')"
+
 eb_report

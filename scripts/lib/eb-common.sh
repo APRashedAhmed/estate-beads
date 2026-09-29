@@ -78,7 +78,9 @@ eb_reviewer_adequate() {
       [[ -n "$xr" ]] || { printf "executor.model '%s' has no codex verifier row\n" "$xm" >&2; return 1; }
       if (( rr < xr )); then
         need="$(jq -r --argjson x "$xr" '.codex_points | to_entries | map(select(.value == $x)) | .[0].key' "$lf")"
-        printf "codex '%s@%s' (point %s) is below executor '%s/%s' (row %s); lowest adequate codex point is %s (or a claude reviewer one tier above the executor)\n" "$rm" "$re" "$rr" "$xm" "${xe:-<no effort>}" "$xr" "$need" >&2
+        local alt="a claude reviewer one tier above the executor"
+        [[ "$xm" == fable ]] && alt="a fable reviewer"
+        printf "codex '%s@%s' (point %s) is below executor '%s/%s' (row %s); lowest adequate codex point is %s (or %s)\n" "$rm" "$re" "$rr" "$xm" "${xe:-<no effort>}" "$xr" "$need" "$alt" >&2
         return 1
       fi
       ;;
