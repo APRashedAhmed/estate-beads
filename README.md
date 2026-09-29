@@ -193,7 +193,7 @@ for the sentence-by-sentence table. Rules 3, 8, 10, and the T1–T5 gate's judgm
 are the residue the guard cannot mechanize.
 
 **Review-based acceptance (design §13).** `accept:independent` now means review-accepted: a fresh
-auditor one tier above the executor emits a verdict frontmatter block (`references/review-brief.md`
+auditor (Claude one tier above the executor, or codex at or above the executor's ladder row) emits a verdict frontmatter block (`references/review-brief.md`
 is the fragment appended to its brief), and the executor's session runs
 `scripts/bead-accept.sh --review <report>` as the sole closer — the reviewer never mutates Bead
 state. Rule 9 in `references/working.md` carries this script's full stdout decision vocabulary

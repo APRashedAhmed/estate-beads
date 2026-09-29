@@ -44,7 +44,7 @@ failure names what broke and the exact remedy.
 | `check-bead.sh` | the authoring invariants on an existing Bead. Silent on pass |
 | `bead-context.sh` | the `## Now` preflight — database path, up to 5 claimed Beads |
 | `bead-read.sh` | the faithful read; `--resume` adds the work-unit path; `--next` prints only the current `NEXT:` value, plain |
-| `bead-claim.sh --id <id> [--model <sonnet\|opus\|fable>]` | claim with the exit-code branch absorbed and `executor.model` recorded. Prints `CLAIMED` or `LOST` |
+| `bead-claim.sh --id <id> [--model <sonnet\|opus\|fable>] [--effort <level>]` | claim with the exit-code branch absorbed and `executor.model` recorded. Prints `CLAIMED` or `LOST` |
 | `bead-progress.sh` | the rule-5 progress block, rewritten in place |
 | `bead-report-success.sh` | rule 9 — evidence, `acceptance-pending`, and a close only under `accept:evidence`. Prints `CLOSED` or `ACCEPTANCE-PENDING <authority>` |
 | `bead-accept.sh --id <id> --evidence <path>` | closes an `accept:evidence` Bead already `acceptance-pending`, reclaimed off-script. Prints `CLOSED` |

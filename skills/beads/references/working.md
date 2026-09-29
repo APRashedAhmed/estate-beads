@@ -14,11 +14,13 @@ only what survives as judgment; the guard's own deny message carries the rest.
 
 1. **Find work.** `bd ready` filtered to your project or your assignment. Work you were handed beats
    self-selection.
-2. **Claim before you start.** Run `scripts/bead-claim.sh --id <id> [--model <sonnet|opus|fable>]`
+2. **Claim before you start.** Run `scripts/bead-claim.sh --id <id> [--model <sonnet|opus|fable>] [--effort <low|medium|high|xhigh|max>]`
    and branch on its one word: `CLAIMED` → proceed; `LOST` → pick other work. Never work an unclaimed
    or other-claimed Bead. A Bead whose `tier:` is above your own is not yours to claim. Pass `--model`
    when the session model cannot be auto-detected — the script refuses the claim without it, because
-   the acceptance closer needs `executor.model` to evaluate the reviewer tier rule (rule 9).
+   the acceptance closer needs `executor.model` to evaluate the reviewer tier rule (rule 9). An
+   orchestrator claiming for a delegated worker passes `--model` and `--effort` explicitly: with
+   `--model` alone no effort is recorded and the strictest row applies.
 3. **A claim is not permission.** Before acting, check capability, authority, capacity, resources,
    safety, responsibility, and that the governing artifacts exist. Any fail: release the claim with a
    note, or escalate (rule 8). This seam is judgment, every time; nothing mechanises it.
@@ -62,8 +64,10 @@ only what survives as judgment; the guard's own deny message carries the rest.
      the required `--operator` flag (the form refuses an `accept:operator` Bead without it, and
      never accepts `--operator` for `accept:independent` — that mode always requires
      `--review <report>`); the evidence cited is the operator's own words, not a file.
-   - `accept:independent` → prints `ACCEPTANCE-PENDING review`. Spawn a fresh auditor one tier above
-     your `executor.model` (same tier only when you are `fable`, the top of the ladder; never a
+   - `accept:independent` → prints `ACCEPTANCE-PENDING review`. Spawn a fresh auditor: Claude one tier above
+     your `executor.model` (same tier only when you are `fable`, the top of the ladder), or codex at
+     or above your executor row in `scripts/lib/verifier-ladder.json` (the dispatcher writes the
+     frontmatter and attests `spawn: fresh`; codex writes the body); never a
      fork — a forked reviewer shares the very context the review exists to check), with
      `references/review-brief.md` appended to its brief. An orchestrator does the same for the
      units it delegated. Take the report it returns and run `scripts/bead-accept.sh --review

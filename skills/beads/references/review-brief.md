@@ -14,8 +14,9 @@ This review accepts or rejects Bead `<bead-id>` against its acceptance condition
 
 > <acceptance condition, quoted>
 
-**Executor model:** `<sonnet|opus|fable>` — the caller states this; it is the Bead's
-`metadata.executor.model`, the value your tier must outrank (see below). The closer re-checks it
+**Executor model / effort:** `<sonnet|opus|fable>` / `<level|unrecorded>` — the caller states
+these; they are the Bead's `metadata.executor.model` and `executor.effort`, the values your tier
+must meet (see below). The closer re-checks it
 against the live Bead independently; this line lets you check it too before you write a verdict.
 
 Put this frontmatter block at the top of the report, fenced by `---` lines exactly as
@@ -25,7 +26,7 @@ Put this frontmatter block at the top of the report, fenced by `---` lines exact
 ---
 bead: <bead-id>
 verdict: PASS | FAIL | INCOMPLETE
-reviewer: { model: <sonnet|opus|fable>, effort: <level> }
+reviewer: { vendor: <claude|codex>, model: <model>, effort: <level> }   # vendor absent = claude; codex needs model and effort
 spawn: fresh
 prior: null   # an ABSOLUTE path to the report this one supersedes, on a re-review only
 reason: coverage | reshape | bounds-not-set   # INCOMPLETE only, optional
@@ -33,9 +34,13 @@ reason: coverage | reshape | bounds-not-set   # INCOMPLETE only, optional
 ```
 
 - **PASS** = no BLOCKER and no MAJOR finding.
-- **Tier rule**: you must outrank the Bead's `executor.model` on the ladder
-  sonnet < opus < fable (same tier only at fable). The closer refuses a reviewer that does
-  not.
+- **Tier rule**: a Claude reviewer must be one tier above the Bead's `executor.model` on the ladder
+  sonnet < opus < fable (same tier only at fable); reviewer effort is not checked. A codex reviewer
+  must sit at or above the executor's row in `scripts/lib/verifier-ladder.json` (row from
+  `executor.model` and `executor.effort`; unrecorded effort takes the strictest row). The closer
+  refuses a reviewer that does not, and any `model@effort` not on that ladder.
+- **Codex review**: the dispatcher writes this frontmatter and attests `spawn: fresh`; codex
+  writes the audit body.
 - **Re-review**: set `prior` to the report you are superseding, as an **absolute path** — the
   closer resolves and records its own `--review <report>` path with `realpath` before writing it
   anywhere, and a later reopen string-compares `prior` against that recorded value.
