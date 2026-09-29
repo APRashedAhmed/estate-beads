@@ -30,6 +30,9 @@ if [[ -n "$model_override" ]]; then
 else
   executor_model="$(eb_detect_model || true)"
   if [[ -z "$executor_model" ]]; then
+    if [[ "$(eb_detect_raw_family || true)" == "haiku" ]]; then
+      die "haiku is no longer an allowed executor model; claim from a sonnet/opus/fable session or pass --model sonnet|opus|fable naming the executor's actual model."
+    fi
     die "the session model could not be detected (ua-model.sh reported no 'ok' state). Re-run with --model sonnet|opus|fable naming the executor's actual model."
   fi
 fi

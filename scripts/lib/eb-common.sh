@@ -56,18 +56,25 @@ eb_model_valid() {
 # ${CLAUDE_CONFIG_DIR:-$HOME/.claude} — m5, fix round 2 residual: this estate is per-account
 # config-dir keyed, same as the sweep's transcript root in eb-session-start.sh; a hardcoded
 # $HOME/.claude here would look for another account's oracle state file).
+# eb_detect_raw_family prints the oracle's family (any value, e.g. haiku) when state is ok, so callers
+# can tell a retired model apart from an undetectable one.
 # Prints the ladder name (sonnet|opus|fable) on stdout and returns 0 when the oracle
 # reports state "ok" and a recognized family; returns 1 (prints nothing) otherwise — every
 # non-ok oracle state nulls the trusted keys by the oracle's own contract, so "not ok" is
 # always treated as undetectable, never as a confidently-wrong guess.
-eb_detect_model() {
+eb_detect_raw_family() {
   local oracle="${EB_MODEL_ORACLE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/state/ua-model.sh}"
   [[ -x "$oracle" || -f "$oracle" ]] || return 1
-  local out state family
+  local out state
   out="$(bash "$oracle" get --json 2>/dev/null)" || return 1
   state="$(printf '%s' "$out" | jq -r '.state // ""' 2>/dev/null)"
   [[ "$state" == "ok" ]] || return 1
-  family="$(printf '%s' "$out" | jq -r '.family // ""' 2>/dev/null)"
+  printf '%s' "$out" | jq -r '.family // ""' 2>/dev/null
+}
+
+eb_detect_model() {
+  local family
+  family="$(eb_detect_raw_family)" || return 1
   eb_model_valid "$family" || return 1
   printf '%s\n' "$family"
 }

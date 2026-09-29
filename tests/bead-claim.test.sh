@@ -58,6 +58,14 @@ assert_rc "--model haiku is refused for a new claim" 1 "$rc"
 status6="$(bd show --json "$id6" 2>/dev/null | jq -r '.[0].status')"
 assert_eq "the haiku-refused Bead was never claimed" "open" "$status6"
 
+# --- a detected haiku session gets a distinct refusal (not "could not be detected") -----------------
+id7="$(scripts/create-bead.sh --title "HaikuSession" --description d --acceptance a --project p --accept evidence --recognized-by x)"
+out7="$(EB_MODEL_ORACLE="$ROOT/tests/fixtures/fake-ua-model-oracle.sh" EB_MODEL_ORACLE_FAMILY=haiku scripts/bead-claim.sh --id "$id7" 2>&1)"; rc=$?
+assert_rc "a detected haiku session refuses the claim" 1 "$rc"
+assert_contains "the refusal says haiku is no longer allowed" "$out7" "haiku is no longer an allowed executor model"
+case "$out7" in *"could not be detected"*) assert_eq "haiku refusal is not the undetectable message" "distinct" "same" ;; *) assert_eq "haiku refusal is not the undetectable message" "distinct" "distinct" ;; esac
+assert_eq "the haiku-session Bead was never claimed" "open" "$(bd show --json "$id7" 2>/dev/null | jq -r '.[0].status')"
+
 # --- an oracle in a non-ok state (stale/absent) is treated as undetectable, never guessed --------
 cat > "$scratch/stale-oracle.sh" <<'EOF'
 #!/usr/bin/env bash
