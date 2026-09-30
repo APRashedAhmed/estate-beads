@@ -12,9 +12,23 @@ overrides it. Vocabulary: the word is **Bead**; the tracker-generic noun is not 
 
 ## Conventions
 
-- One effort per work-unit directory. Its **design note** is `<effort>-design.md`, holding four
+- One effort per work-unit directory. Its **design note** is `<effort>-design.md`, holding seven
   sections: `## Destination`, `## Decisions` (dated `Operator direction (YYYY-MM-DD): …` lines, one per
-  resolved OPERATOR Bead, each naming its Bead), `## Not yet specified`, `## Out of scope`.
+  resolved OPERATOR Bead, each naming its Bead), `## Selection`, `## Members`,
+  `## For operator ruling`, `## Not yet specified`, `## Out of scope`. The selection pass fills the
+  middle three:
+  - `## Selection` — the approved outcome as Commissioned, Deferred (each with its trigger), and
+    Killed (each with its reason), plus an optional one-line appetite. The approval act writes a dated
+    `Operator direction (YYYY-MM-DD): <approval, with its exceptions>` line here. That line is the A1
+    recognition source (contract §1.1): every commissioned or deferred Bead's `recognized-by` cites
+    `<design-note path>#Selection` and the approval date. Selection is an operator act, not a
+    stratum or a document (strata.md Selection; retirement record
+    `$SEAT_ROOT/iunu/PerMaat/intent/2026-09-26-strategy-stratum-retirement.md`).
+  - `## Members` — ids of existing Beads the operator counted as members of the effort. They are
+    not relabelled.
+  - `## For operator ruling` — recommendations the pass may not act on: `supersedes` rows,
+    proposed re-deferrals, undeferrals, and kills of existing Beads, and hygiene findings. An agent
+    never edits the target Bead from this list; it waits for the ruling (Defer, below).
 - Research findings land in `<workunit>/research/<NN>-<slug>.md`; decision prototypes under
   `<workunit>/prototypes/<slug>/`. A Bead links its assets by path in its evidence line.
 - Bead ids (`pa-xxxx`) are opaque. Refer to maps and Beads by **title** in everything the operator
@@ -50,9 +64,15 @@ overrides it. Vocabulary: the word is **Bead**; the tracker-generic noun is not 
   about the shape changes. *time* →
   `bd defer <id> --until <date>` (auto-wakes to `open`). *Bead completion* → the blocking edge alone,
   `bd dep <blocker> --blocks <id>`; the Bead stays `open` and `bd ready` releases it when the blocker
-  closes. *capability* → `bd defer <id>` undated; the Strategy review or audit walk undefers it once the
-  capability exists. `bd ready` already excludes deferred and blocked Beads. Re-deferral and kills
-  (`declined`) happen at the Strategy review, not on wake.
+  closes. *capability* → `bd defer <id>` undated; the audit walk undefers it once the capability
+  exists (availability only). `bd ready` already excludes deferred and blocked Beads. Re-deferral and
+  kills (`declined`) are proposed by the map holder under `## For operator ruling` and ratified by the
+  operator at a recorded selection act, not on wake. Operator direction (2026-09-26): Re-deferral,
+  kills, and `declined` closes of deferred Beads: the Bead's owning project (its map holder where
+  one exists) PROPOSES; the operator RATIFIES at a recorded selection act — a stage-5 selection
+  approval, or a ruling on the scheduled audit report's deferred-set findings. Agents execute the
+  recorded ruling and never decide. The Strategy review that held this role is retired (retirement
+  record `$SEAT_ROOT/iunu/PerMaat/intent/2026-09-26-strategy-stratum-retirement.md`).
 - **Ready set**: `bd ready -l wf:<effort-slug> --exclude-label wayfinder:out-of-scope --json`
   (`bd ready --help`, verified live on bd 1.3.0: `--exclude-label` "Exclude issues that have ANY
   of these labels" — needed because releasing an out-of-scope Bead returns it to `open`, which

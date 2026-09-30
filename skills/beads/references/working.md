@@ -41,7 +41,13 @@ only what survives as judgment; the guard's own deny message carries the rest.
    passes T1–T5 (`references/authoring.md`), citing your Bead as `recognized-by` and linked
    `discovered-from`. Useful but unnecessary → proposal intake. Steps of your own work are never
    Beads. Recognized work that is wanted but not funded now is deferred with one stated trigger
-   under `## Trigger` (contract §1.2), never lapsed.
+   under `## Trigger` (contract §1.2), never lapsed. You may propose re-deferring or killing a deferred
+   Bead; you never do it on your own judgment. Operator direction (2026-09-26): Re-deferral, kills,
+   and `declined` closes of deferred Beads: the Bead's owning project (its map holder where one
+   exists) PROPOSES; the operator RATIFIES at a recorded selection act — a stage-5 selection
+   approval, or a ruling on the scheduled audit report's deferred-set findings. Agents execute the
+   recorded ruling and never decide.
+   (Retirement record `$SEAT_ROOT/iunu/PerMaat/intent/2026-09-26-strategy-stratum-retirement.md`.)
 7. **Hand off on the Bead and in the work-unit.** See the carrier table and resume order below. A
    claim never outlives its session: release it yourself with
    `scripts/bead-release.sh --id <id> --note "<why>"` unless the same actor resumes, and the

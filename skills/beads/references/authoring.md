@@ -34,6 +34,11 @@ Recognition sources, cited verbatim in `recognized-by`:
 | A3 | An admitted Responsibility or standing control | the Responsibility or control record |
 | A4 | Necessity for an already-recognized Bead | that Bead's id, plus the A1–A3 source at its chain's root |
 
+For work selected at a selection act, the A1 citation is `<note>#Selection` and the approval date: the
+design or goal note's `## Selection` section carries the dated approval line (contract §1.1). A
+Strategy's review is no longer a recognition source (retirement record
+`$SEAT_ROOT/iunu/PerMaat/intent/2026-09-26-strategy-stratum-retirement.md`).
+
 Run T4 with a real probe: `bd search "<a few words of the title>"`. The verdict is yours; the probe
 only informs it.
 
