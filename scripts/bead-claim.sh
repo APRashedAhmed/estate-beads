@@ -56,7 +56,7 @@ if [[ "$rc" -eq 0 ]]; then
   # A claim that records no effort must drop a stale one: the filter deletes it from the merged object.
   drop='.'; [[ -n "$executor_effort" ]] || drop='del(.executor.effort)'
   eb_metadata_merge "$id" "$frag" "$drop" \
-    || die "claim landed but recording metadata executor.model failed. Run: bd update $id --metadata '$frag' (and, when no effort was given, clear the stale executor.effort: run bead-release.sh --id $id, then bead-claim.sh --id $id --model $executor_model)"
+    || die "claim landed but recording metadata executor.model failed. Run: bd update $id --metadata '$frag' (and, when no effort was given, clear the stale executor.effort: run bead-release.sh --id $id --note 'clear stale executor.effort', then bead-claim.sh --id $id --model $executor_model)"
   printf 'CLAIMED\n'
   exit 0
 fi
