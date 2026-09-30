@@ -262,4 +262,26 @@ assert_rc "an accept under EB_LADDER_FILE succeeds" 0 "$rc"
 assert_contains "the override is announced on stderr" "$(cat "$errf")" "ladder override: $ROOT/scripts/lib/verifier-ladder.json"
 assert_contains "the ladder path is recorded in the EVIDENCE line" "$(bd show --json "$id" 2>/dev/null | jq -r '.[0].notes')" "ladder override: $ROOT/scripts/lib/verifier-ladder.json"
 
+# --- NIT-1 (pa-tdf): the ladder override is also recorded on FAIL and halt notes ----------------------
+LADDER="$ROOT/scripts/lib/verifier-ladder.json"
+notes_of() { bd show --json "$1" 2>/dev/null | jq -r '.[0].notes'; }
+inprog_fail() {  # <title> <ladder-file-or-empty> <cycles-left: 2|1> -> prints the Bead id after a FAIL verdict
+  local fid fr
+  fid="$(report_pending "$1" independent sonnet low)"
+  [[ "$3" == 1 ]] && bd update "$fid" --metadata '{"budget":{"cycles":1}}' >/dev/null
+  fr="$REPORTS/nit1-$fid.md"; eb_write_review "$fr" "$fid" FAIL opus fresh ""
+  if [[ -n "$2" ]]; then EB_LADDER_FILE="$2" scripts/bead-accept.sh --review "$fr" >/dev/null 2>&1
+  else scripts/bead-accept.sh --review "$fr" >/dev/null 2>&1; fi
+  printf '%s' "$fid"
+}
+fid="$(inprog_fail "LadderFailCont" "$LADDER" 2)"
+assert_contains "FAIL with cycles left records the ladder override in notes" "$(notes_of "$fid")" "ladder override: $LADDER"
+fid="$(inprog_fail "LadderFailHalt" "$LADDER" 1)"
+assert_contains "the halting FAIL is a halt" "$(bd show --json "$fid" 2>/dev/null | jq -c '.[0].labels')" "halt:budget"
+assert_contains "FAIL that halts records the ladder override in notes" "$(notes_of "$fid")" "ladder override: $LADDER"
+fid="$(inprog_fail "NoLadderFailCont" "" 2)"
+assert_eq "FAIL with cycles left, no override: notes carry none" "0" "$(notes_of "$fid" | grep -c "ladder override:")"
+fid="$(inprog_fail "NoLadderFailHalt" "" 1)"
+assert_eq "FAIL that halts, no override: notes carry none" "0" "$(notes_of "$fid" | grep -c "ladder override:")"
+
 eb_report

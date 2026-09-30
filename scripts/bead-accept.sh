@@ -52,8 +52,8 @@ release_and_halt() {  # <id> <halt-label> <next-line>
   bd update "$id" --add-label "$label" >/dev/null \
     || die "the claim was released but adding label '$label' failed. Run: bd update $id --add-label $label"
   "$SCRIPT_DIR/bead-progress.sh" --id "$id" --preserve \
-    --in-progress "released: $label" --next "$next" \
-    || die "the halt landed but the rule-5 note failed to write (COMPLETED/workunit/other lines were meant to be preserved). Run: $SCRIPT_DIR/bead-progress.sh --id $id --preserve --in-progress 'released: $label' --next '$next'"
+    --in-progress "released: $label${ladder_note}" --next "$next" \
+    || die "the halt landed but the rule-5 note failed to write (COMPLETED/workunit/other lines were meant to be preserved). Run: $SCRIPT_DIR/bead-progress.sh --id $id --preserve --in-progress 'released: $label${ladder_note}' --next '$next'"
 }
 
 # M1 (review pa-s2s.8-review-1): `bd close` refuses when the actor is not the recorded assignee
@@ -254,9 +254,9 @@ case "$r_verdict" in
       printf 'HALTED\n'
     else
       "$SCRIPT_DIR/bead-progress.sh" --id "$r_bead" --preserve \
-        --in-progress "review FAILED; see findings" \
+        --in-progress "review FAILED; see findings${ladder_note}" \
         --next "$review" \
-        || die "budget was decremented but the rule-5 NEXT rewrite failed. Run: $SCRIPT_DIR/bead-progress.sh --id $r_bead --preserve --in-progress 'review FAILED; see findings' --next '$review' (preserving COMPLETED/workunit/other lines)."
+        || die "budget was decremented but the rule-5 NEXT rewrite failed. Run: $SCRIPT_DIR/bead-progress.sh --id $r_bead --preserve --in-progress 'review FAILED; see findings${ladder_note}' --next '$review' (preserving COMPLETED/workunit/other lines)."
       printf 'FAILED %s\n' "$cycles_after"
     fi
     ;;
@@ -264,6 +264,8 @@ case "$r_verdict" in
   INCOMPLETE)
     case "$r_reason" in
       ""|coverage)
+        # No Bead write by contract (§5.3: INCOMPLETE leaves the Bead unchanged; references/working.md):
+        # stderr carries the ladder override here, not the notes.
         printf 'INCOMPLETE\n'
         ;;
       reshape|bounds-not-set)
