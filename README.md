@@ -209,7 +209,7 @@ caller re-runs once they close.
 `superseded`, `duplicate`, `abandoned`, `infeasible`, and `declined` — gated to the actors contract
 §5.4's "Who may close" column names, so far as they are mechanically checkable: `--operator` is the
 only verifiable proxy for "the recognition source's owner" (abandoned, infeasible, superseded) and
-for "the reviewing actor at the Strategy review" (declined); an executor (actor == the Bead's own
+for "the operator at a recorded selection act" (declined); an executor (actor == the Bead's own
 assignee) is refused outright and pointed at `bead-release.sh --note`. `superseded`/`duplicate`
 require `--ref <bead-id>`, verified to exist. `infeasible` requires `--evidence <path>`. The guard
 (`scripts/eb-guard.py`) denies raw `bd supersede`/`bd duplicate` naming this script. `lapsed` — the

@@ -59,7 +59,7 @@ bead="$(bd show --json "$infeas" 2>/dev/null | jq -c '.[0]')"
 assert_eq "status is closed (infeasible)" "closed" "$(printf '%s' "$bead" | jq -r '.status')"
 assert_contains "EVIDENCE line records the evidence path" "$(printf '%s' "$bead" | jq -r '.notes')" "EVIDENCE: $scratch/infeasible-evidence.txt"
 
-# --- declined: --operator (the only mechanical proxy for the Strategy-review actor) ---------
+# --- declined: --operator (the only mechanical proxy for the recorded selection act) ---------
 decl="$(mk "Declined-one")"
 out="$(scripts/bead-close.sh --id "$decl" --reason declined --note "not selected at review" --operator)"; rc=$?
 assert_eq "declined closes with --operator" "CLOSED declined" "$out"

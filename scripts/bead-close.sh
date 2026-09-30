@@ -21,11 +21,12 @@
 #               in a note", pointed at bead-release.sh --note.
 #   infeasible  same actor gate as abandoned, PLUS --evidence <path> (an existing file) recorded
 #               on the EVIDENCE line ("Evidence shows the work cannot be done as recognized").
-#   declined    contract §1.2/§5.4: "the reviewing actor at the Strategy review only; never the
-#               audit walk". `lapsed` (the reason named in this Bead's original brief) was
-#               retired by Operator direction (2026-09-26; contract §5.4) in favor of `declined`
+#   declined    contract §1.2/§5.4: "the operator at a recorded selection act, on the
+#               owning project's proposal; an agent only when executing that recorded ruling;
+#               never the audit walk". `lapsed` (the reason named in this Bead's original
+#               brief) was retired by Operator direction (2026-09-26; contract §5.4) in favor of `declined`
 #               before this unit landed — see README.md "Known gaps" for the full note. This
-#               script cannot verify Strategy-review standing beyond the --operator flag, which
+#               script cannot verify the recorded selection act beyond the --operator flag, which
 #               it requires as the closest mechanical proxy available; `--reason lapsed` is
 #               refused outright, naming `declined` as the replacement.
 #
@@ -75,7 +76,7 @@ case "$reason" in
   superseded|duplicate|abandoned|infeasible|declined) ;;
   accepted) refused "accepted closes through bead-accept.sh, not this script (contract §5.3/§5.4)." ;;
   lapsed)
-    refused "lapsed is retired as a close reason (contract §5.4, Operator direction 2026-09-26); use --reason declined at a Strategy review instead."
+    refused "lapsed is retired as a close reason (contract §5.4, Operator direction 2026-09-26); use --reason declined on a recorded selection act instead."
     ;;
   *) die "unknown --reason '$reason'. Valid: superseded|duplicate|abandoned|infeasible|declined." ;;
 esac
@@ -100,7 +101,7 @@ if [[ "$reason" == infeasible ]]; then
 fi
 
 if [[ "$reason" == declined ]]; then
-  [[ "$operator" -eq 1 ]] || refused "declined is closed only at a Strategy review (contract §1.2/§5.4: 'the reviewing actor at the Strategy review only; never the audit walk'); pass --operator, the only mechanical proxy this script can check."
+  [[ "$operator" -eq 1 ]] || refused "declined is closed only on a recorded selection act (contract §1.2/§5.4: 'the operator at a recorded selection act, on the owning project's proposal; an agent only when executing that recorded ruling; never the audit walk'); pass --operator, the only mechanical proxy this script can check."
 fi
 
 # --- actor gate: abandoned, infeasible, superseded (contract §5.4: "same as abandoned") -----
