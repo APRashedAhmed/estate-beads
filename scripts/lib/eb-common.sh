@@ -22,12 +22,12 @@ eb_expand_seat_root() {
 # Read the Bead's existing metadata, deep-merge the given JSON fragment over it (jq `*`), write
 # the FULL merged object back. Never loses an existing key even if bd's own --metadata merge
 # behaves differently across versions.
-eb_metadata_merge() {  # <id> <json-fragment>
-  local id="$1" frag="$2" existing merged
+eb_metadata_merge() {  # <id> <json-fragment> [jq-filter applied to the merged object; default .]
+  local id="$1" frag="$2" filter="${3:-.}" existing merged
   existing="$(bd show --json "$id" 2>/dev/null | jq -c '.[0].metadata // {}')" \
     || { printf 'eb-common: bd show --json failed for %s; refusing to merge metadata (would drop existing keys)\n' "$id" >&2; return 1; }
   [[ -n "$existing" && "$existing" != "null" ]] || existing='{}'
-  merged="$(jq -nc --argjson a "$existing" --argjson b "$frag" '$a * $b')" \
+  merged="$(jq -nc --argjson a "$existing" --argjson b "$frag" "\$a * \$b | $filter")" \
     || { printf 'eb-common: metadata merge failed to build JSON for %s\n' "$id" >&2; return 1; }
   bd update "$id" --metadata "$merged" >/dev/null
 }

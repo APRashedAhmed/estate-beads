@@ -53,17 +53,10 @@ set -e
 
 if [[ "$rc" -eq 0 ]]; then
   frag="$(jq -nc --arg m "$executor_model" --arg e "$executor_effort" '{"executor":({"model":$m} + (if $e == "" then {} else {"effort":$e} end))}')"
-  eb_metadata_merge "$id" "$frag" \
-    || die "claim landed but recording metadata executor.model failed. Run: bd update $id --metadata '$frag'"
-  if [[ -z "$executor_effort" ]]; then
-    # The deep merge keeps an earlier executor.effort; a claim that records none must drop it
-    # (a stale effort would pick the wrong verifier row). bd's --metadata replaces the whole
-    # top-level `executor` object, and a dotted --unset-metadata does not reach it.
-    execobj="$(bd show --json "$id" 2>/dev/null | jq -c '.[0].metadata.executor // {} | del(.effort)')" \
-      || die "claim landed but clearing a stale executor.effort failed (bd show). Re-run: $SCRIPT_DIR/bead-release.sh --id $id, then bead-claim.sh --id $id --model $executor_model"
-    bd update "$id" --metadata "$(jq -nc --argjson x "$execobj" '{"executor":$x}')" >/dev/null \
-      || die "claim landed but clearing a stale executor.effort failed. Run: bd update $id --metadata '$(jq -nc --argjson x "$execobj" '{"executor":$x}')'"
-  fi
+  # A claim that records no effort must drop a stale one: the filter deletes it from the merged object.
+  drop='.'; [[ -n "$executor_effort" ]] || drop='del(.executor.effort)'
+  eb_metadata_merge "$id" "$frag" "$drop" \
+    || die "claim landed but recording metadata executor.model failed. Run: bd update $id --metadata '$frag' (and, when no effort was given, clear any stale executor.effort)"
   printf 'CLAIMED\n'
   exit 0
 fi

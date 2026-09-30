@@ -112,4 +112,18 @@ assert_eq "the re-claim keeps executor.model" "opus" "$(bd show --json "$ide5" 2
 assert_eq "the re-claim keeps other executor keys" "bar" "$(bd show --json "$ide5" 2>/dev/null | jq -r '.[0].metadata.executor.foo // "none"')"
 assert_eq "the re-claim keeps unrelated metadata" "x" "$(bd show --json "$ide5" 2>/dev/null | jq -r '.[0].metadata["recognized-by"]')"
 
+# --- MINOR-2 (pa-tdf): a no-effort re-claim writes the claim metadata in ONE bd update ----------------
+idw="$(mkbead EffortOneWrite)"
+scripts/bead-claim.sh --id "$idw" --model opus --effort high >/dev/null
+scripts/bead-release.sh --id "$idw" --note "test release" >/dev/null
+assert_eq "precondition: effort high is on record before the re-claim" "high" "$(effort_of "$idw")"
+real_bd="$(command -v bd)"
+wrapdir="$scratch/bdwrap"; mkdir -p "$wrapdir"
+bdlog="$scratch/bd-argv.log"; : >|"$bdlog"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\nexec "%s" "$@"\n' "$bdlog" "$real_bd" >|"$wrapdir/bd"
+chmod +x "$wrapdir/bd"
+PATH="$wrapdir:$PATH" scripts/bead-claim.sh --id "$idw" --model opus >/dev/null
+assert_eq "a no-effort re-claim issues exactly one 'update --metadata' call" "1" "$(grep -cE '^update .*--metadata' "$bdlog")"
+assert_eq "the no-effort re-claim leaves no executor.effort" "none" "$(effort_of "$idw")"
+
 eb_report
