@@ -71,8 +71,8 @@ overrides it. Vocabulary: the word is **Bead**; the tracker-generic noun is not 
   kills, and `declined` closes of deferred Beads: the Bead's owning project (its map holder where
   one exists) PROPOSES; the operator RATIFIES at a recorded selection act — a stage-5 selection
   approval, or a ruling on the scheduled audit report's deferred-set findings. Agents execute the
-  recorded ruling and never decide. The Strategy review that held this role is retired (retirement
-  record `$SEAT_ROOT/iunu/PerMaat/intent/2026-09-26-strategy-stratum-retirement.md`).
+  recorded ruling and never decide. This role formerly sat with the retired Strategy stratum (retirement record
+  `$SEAT_ROOT/iunu/PerMaat/intent/2026-09-26-strategy-stratum-retirement.md`).
 - **Ready set**: `bd ready -l wf:<effort-slug> --exclude-label wayfinder:out-of-scope --json`
   (`bd ready --help`, verified live on bd 1.3.0: `--exclude-label` "Exclude issues that have ANY
   of these labels" — needed because releasing an out-of-scope Bead returns it to `open`, which
