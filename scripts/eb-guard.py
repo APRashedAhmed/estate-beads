@@ -28,9 +28,16 @@ failing the whole command closed (fix round 2, N4).
 Output: silent (no stdout), exit 0 on allow. On deny: the vcs-rails PreToolUse JSON deny shape
 on stdout, exit 0 (a `permissionDecision` verdict, not a hook crash).
 
-Any exception anywhere in this script is caught by the outermost guard: fall back to a raw
-substring/word-boundary regex for `bd` over the ORIGINAL stdin text — deny if present, allow
-if not. A bug in this script can never fail open on a live `bd` command.
+A genuine tokenizer `ParseFailure` on the extracted `command` text (B2/B8, pa-e38.1) falls back to
+`_bd_outside_quotes_and_heredocs`: deny only when `bd` appears as a command word outside quoted
+text and outside a DATA-fed heredoc body's prose lines (a `bd`-command-position line inside a
+data-fed body, or anywhere in a SHELL-fed body, still denies — see that function's docstring) —
+never on a bare textual `bd` match inside quotes or heredoc prose.
+
+Any OTHER exception anywhere in this script (e.g. malformed JSON on stdin, before `command` is
+even extracted) is caught by the outermost guard: fall back to a raw substring/word-boundary
+regex for `bd` over the ORIGINAL stdin text — deny if present, allow if not. A bug in this script
+can never fail open on a live `bd` command.
 """
 from __future__ import annotations
 
@@ -89,6 +96,114 @@ BD_TOKEN_RE = re.compile(r"\bbd\b")
 
 class ParseFailure(Exception):
     pass
+
+
+# --- B8 (pa-e38.1): genuine-parse-failure fallback, narrowed to command-position `bd` ----------
+# `main()`'s outermost ParseFailure handler used to deny on a bare `BD_TOKEN_RE.search(command)` —
+# a `bd` mention ANYWHERE in the raw text, including inside quoted prose or a heredoc body that is
+# pure DATA. A command whose only unparseable part is e.g. a mismatched heredoc delimiter, with
+# "bd" mentioned only in prose, was denied for a word that was never going to run.
+#
+# `_bd_outside_quotes_and_heredocs` masks out quoted spans before the `bd`-presence check
+# (best-effort, lenient — unlike `_extract_heredocs` this never raises on a missing/mismatched
+# terminator; it treats everything from the `<<WORD` line to either the real terminator or the
+# end of the string as body). A SHELL-fed heredoc body (consumer `bash`/`sh`/`eval`/... — same
+# `_heredoc_consumer_name` resolution `_extract_heredocs` uses) is EXECUTED code, not data: its
+# own unresolved quote state is exactly the "recognized bd invocation, no verdict" failure the
+# top-level parse-failure deny already covers (N4), so it is searched for `bd` directly, textually
+# — never masked by its own (possibly broken) quoting. This keeps the existing shell-fed-heredoc
+# deny rows (e.g. a heredoc body with an unterminated quote that still mentions `bd`) denying. A
+# DATA-fed heredoc body (`cat`, `tee`, a file, ...) is prose UNLESS one of its own lines, piped
+# onward to a shell by the surrounding command (`cat <<EOF | bash`), is itself a `bd` invocation —
+# so a data-fed body gets the SAME per-line first-token check `tokenize_segments`'s m2 degrade
+# path already applies (a line whose first token's basename is `bd` denies; an ordinary prose
+# line, e.g. "The tracker CLI is bd.", does not). This keeps a `bd`-command-position line in a
+# data-fed body denying (matching `row11-heredoc-close`'s normal-path verdict) while a `bd`
+# MENTION in data-fed prose is allowed even after a parse failure. Fail-closed is otherwise
+# unchanged: `bd` as a real, unquoted, non-heredoc command-word token still denies even though the
+# rest of the command failed to parse.
+def _mask_quotes(text: str) -> str:
+    out = []
+    in_single = False
+    in_double = False
+    escape = False
+    for ch in text:
+        if escape:
+            out.append(" ")
+            escape = False
+            continue
+        if ch == "\\" and not in_single:
+            escape = True
+            continue
+        if ch == "'" and not in_double:
+            in_single = not in_single
+            out.append(" ")
+            continue
+        if ch == '"' and not in_single:
+            in_double = not in_double
+            out.append(" ")
+            continue
+        if in_single or in_double:
+            out.append(" ")
+            continue
+        out.append(ch)
+    return "".join(out)
+
+
+def _data_fed_body_has_bd_command_line(body_lines) -> bool:
+    """Same m2 per-line first-token check `tokenize_segments` already applies to a data-fed
+    heredoc body it cannot shlex-parse: a line whose first token's basename is `bd` is a command
+    line, not prose — denied even though it is "inside a heredoc body"."""
+    for line in body_lines:
+        stripped_line = line.strip()
+        if not stripped_line:
+            continue
+        first_tok = stripped_line.split()[0]
+        if os.path.basename(first_tok) == "bd":
+            return True
+    return False
+
+
+def _bd_outside_quotes_and_heredocs(command: str) -> bool:
+    lines = command.split("\n")
+    visible_lines = []
+    shell_fed_bodies = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        m = _HEREDOC_START_RE.search(line)
+        visible_lines.append(line)
+        i += 1
+        if not m:
+            continue
+        marker = m.group(2)
+        strip_tabs = "<<-" in line
+        consumer = _heredoc_consumer_name(line[: m.start()])
+        is_shell_fed = consumer is not None and (
+            consumer in _SHELL_C_NAMES or consumer in _HEREDOC_SHELL_FED_EXTRA
+        )
+        body_lines = []
+        while i < n:
+            candidate = lines[i]
+            test = candidate.lstrip("\t") if strip_tabs else candidate
+            if test == marker:
+                visible_lines.append(candidate)
+                i += 1
+                break
+            body_lines.append(candidate)
+            i += 1
+        if not body_lines:
+            continue
+        if is_shell_fed:
+            shell_fed_bodies.append("\n".join(body_lines))
+        elif _data_fed_body_has_bd_command_line(body_lines):
+            return True
+        # A data-fed body with no `bd`-command-position line is prose — omitted from
+        # `visible_lines` entirely, same "default to data-fed" rule `_extract_heredocs` documents.
+    if BD_TOKEN_RE.search(_mask_quotes("\n".join(visible_lines))):
+        return True
+    return any(BD_TOKEN_RE.search(body) for body in shell_fed_bodies)
 
 
 # --- heredoc extraction -------------------------------------------------------------------
@@ -228,14 +343,78 @@ def _normalize_newlines(command: str) -> str:
 # segment after either still gets its own independent verdict.
 _OPERATORS = ("&&", "||", ";", "|", "&", "|&")
 
+# B2 (pa-e38.1): `shlex(..., punctuation_chars=True)` does not treat `$` as a punctuation char, so
+# a `VAR=$(` sequence arrives glued to the assignment word as one token (`P=$`), and a `)`
+# immediately followed by another punctuation char (`;`, `|`, `&`, ...) arrives glued the other
+# way (`');'`) since shlex groups adjacent punctuation chars into a single run. Both glues defeat
+# `_split_segments`'s `tok == "$" and tokens[i + 1] == "("` / bare-`")"` checks, so a perfectly
+# ordinary `P=$(cmd); bd show x` raises ParseFailure("unbalanced parens") and falls to the
+# textual `bd`-anywhere deny fallback — denying an allowed `bd show` that merely follows a
+# `$( )`-assignment. `_repair_glued_tokens` re-splits both glues after shlex has otherwise done
+# its job, so `_split_segments`'s existing `$( )`-recursion sees the tokens it expects.
+# Narrowed to runs containing a paren: the glue bug this repairs is specifically a `(`/`)` fused
+# to an adjacent punctuation char by shlex's punctuation-run grouping (e.g. `");"` from
+# `...plugin); bd...`). A pure non-paren run (`;;`, `||`, `&&`, `2>&1`'s `>&`, ...) is already
+# shlex's own correctly-grouped operator token and is left untouched — narrower than "any
+# punctuation-only run" so this repair pass cannot reshape operator tokens the existing 88 rows
+# already depend on.
+_PUNCT_ONLY_RE = re.compile(r"^(?=.*[()])[()<>|&;]+$")
+# A whole token shlex produced INSIDE a quoted assignment (`X="$(bd show x)"` dequotes, posix-
+# style, to the single glued word `X=$(bd show x)`, never split by shlex at all since nothing
+# inside it is unquoted whitespace). Recognized here and exploded into the same `VAR=`, `$`, `(`,
+# ...inner tokens..., `)` shape `_split_segments` already knows how to recurse into — so the
+# substitution's own contents (which may themselves invoke/deny a `bd` verb) get their own
+# judged segment, and the following/preceding segments see a bare `VAR=` (an inert assignment,
+# never a `bd` invocation) rather than one opaque, unrecognized token.
+_ASSIGN_SUBSHELL_TOKEN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*=)\$\((.*)\)$", re.DOTALL)
+
+
+def _resplit_punct_run(s):
+    out = []
+    i = 0
+    n = len(s)
+    while i < n:
+        two = s[i : i + 2]
+        if two in _OPERATORS:
+            out.append(two)
+            i += 2
+        else:
+            out.append(s[i])
+            i += 1
+    return out
+
+
+def _repair_glued_tokens(tokens):
+    out = []
+    for tok in tokens:
+        m = _ASSIGN_SUBSHELL_TOKEN_RE.match(tok)
+        if m:
+            assign, inner = m.group(1), m.group(2)
+            out.append(assign)
+            out.append("$")
+            out.append("(")
+            out.extend(_shlex_tokens(inner))
+            out.append(")")
+            continue
+        if len(tok) > 1 and tok.endswith("$"):
+            out.append(tok[:-1])
+            out.append("$")
+            continue
+        if len(tok) > 1 and tok not in _OPERATORS and _PUNCT_ONLY_RE.match(tok):
+            out.extend(_resplit_punct_run(tok))
+            continue
+        out.append(tok)
+    return out
+
 
 def _shlex_tokens(text: str):
     lex = shlex.shlex(text, posix=True, punctuation_chars=True)
     lex.whitespace_split = True
     try:
-        return list(lex)
+        tokens = list(lex)
     except ValueError as e:
         raise ParseFailure(str(e)) from e
+    return _repair_glued_tokens(tokens)
 
 
 def _split_segments(tokens):
@@ -908,7 +1087,7 @@ def main():
         try:
             verdict = judge_command(command, cwd)
         except ParseFailure:
-            if BD_TOKEN_RE.search(command):
+            if _bd_outside_quotes_and_heredocs(command):
                 emit_deny("parse-failure")
                 return 0
             return 0
