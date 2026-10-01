@@ -217,6 +217,8 @@ rm -f "$ENVFILE2E"
 #     regardless of what the baseline measured. A run must satisfy BOTH checks to pass.
 EB_SESSION_END_CONTRACT_MS=1500
 EB_SESSION_END_CEILING_MS=$((EB_SESSION_END_CONTRACT_MS * 3))
+# 250ms is calibrated on this seat; a slower seat with a higher idle `bd list` cost should set
+# EB_SESSION_END_B_QUIET_MS in its own environment rather than edit this default.
 EB_SESSION_END_B_QUIET_MS="${EB_SESSION_END_B_QUIET_MS:-250}"
 EB_SESSION_END_LOAD_K="${EB_SESSION_END_LOAD_K:-3}"
 
