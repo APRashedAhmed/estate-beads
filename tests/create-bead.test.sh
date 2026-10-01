@@ -54,4 +54,37 @@ bd close "$closedkey" --reason "accepted test" >/dev/null 2>&1
 reopened_new="$(scripts/create-bead.sh --title "ClosedKeyed-again" --description d --acceptance a --project p --accept evidence --recognized-by x --key wk-closed)"
 assert_ne "a closed Bead's key does not block re-creation (open,in_progress,blocked filter)" "EXISTS: $closedkey" "$reopened_new"
 
+# --- workunit.yaml backlink: flow-form beads: [] -> beads: [<new>] (B7) -------------------------
+mkdir -p "$scratch/wu-flow-empty"
+printf 'slug: flow-empty\nbeads: []\n' > "$scratch/wu-flow-empty/workunit.yaml"
+flowid="$(scripts/create-bead.sh --title "FlowEmpty" --description d --acceptance a --project p --accept evidence --recognized-by x --workunit "$scratch/wu-flow-empty")"; rc=$?
+assert_rc "create-bead.sh exits 0 for a flow-form 'beads: []' manifest" 0 "$rc"
+[[ -n "$flowid" ]] && eb_ok "create-bead.sh prints the new id for flow-form 'beads: []'" \
+  || eb_bad "create-bead.sh prints the new id for flow-form 'beads: []'"
+grep -qF "beads: [$flowid]" "$scratch/wu-flow-empty/workunit.yaml" \
+  && eb_ok "flow-form 'beads: []' becomes 'beads: [<new>]'" \
+  || eb_bad "flow-form 'beads: []' becomes 'beads: [<new>]'"
+
+# --- workunit.yaml backlink: flow-form beads: [a, b] -> beads: [a, b, <new>] (B7) ---------------
+mkdir -p "$scratch/wu-flow-pop"
+printf 'slug: flow-pop\nbeads: [existing-a, existing-b]\n' > "$scratch/wu-flow-pop/workunit.yaml"
+flowid2="$(scripts/create-bead.sh --title "FlowPop" --description d --acceptance a --project p --accept evidence --recognized-by x --workunit "$scratch/wu-flow-pop")"; rc=$?
+assert_rc "create-bead.sh exits 0 for a flow-form 'beads: [a, b]' manifest" 0 "$rc"
+[[ -n "$flowid2" ]] && eb_ok "create-bead.sh prints the new id for flow-form 'beads: [a, b]'" \
+  || eb_bad "create-bead.sh prints the new id for flow-form 'beads: [a, b]'"
+grep -qF "beads: [existing-a, existing-b, $flowid2]" "$scratch/wu-flow-pop/workunit.yaml" \
+  && eb_ok "flow-form 'beads: [a, b]' becomes 'beads: [a, b, <new>]'" \
+  || eb_bad "flow-form 'beads: [a, b]' becomes 'beads: [a, b, <new>]'"
+
+# --- block form still works unchanged (regression guard for B7 fix) -----------------------------
+mkdir -p "$scratch/wu-block"
+printf 'slug: block\nbeads:\n  - existing-c\n' > "$scratch/wu-block/workunit.yaml"
+blockid="$(scripts/create-bead.sh --title "BlockForm" --description d --acceptance a --project p --accept evidence --recognized-by x --workunit "$scratch/wu-block")"
+grep -qF -- "- $blockid" "$scratch/wu-block/workunit.yaml" \
+  && eb_ok "block-form 'beads:' list still gets the new id appended" \
+  || eb_bad "block-form 'beads:' list still gets the new id appended"
+grep -qF -- "- existing-c" "$scratch/wu-block/workunit.yaml" \
+  && eb_ok "block-form existing entries are preserved" \
+  || eb_bad "block-form existing entries are preserved"
+
 eb_report

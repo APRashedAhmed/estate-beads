@@ -77,7 +77,11 @@ if [[ -n "$wu" ]]; then
   elif [[ ! -f "$manifest" ]]; then
     report "'$manifest' does not exist, so the backlink is unwritable" \
       "create the manifest, then add:"$'\n'"beads:"$'\n'"  - $id"$'\n'"lifecycle: beads"
-  elif ! grep -qF -- "- $id" "$manifest"; then
+  elif ! { grep -qF -- "- $id" "$manifest" \
+           || grep -E '^beads:[[:space:]]*\[' "$manifest" \
+              | sed -E 's/^beads:[[:space:]]*\[//' | tr -d ']' | tr ',' '\n' \
+              | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' \
+              | grep -qxF -- "$id"; }; then
     report "'$manifest' carries no 'beads:' backlink to $id (contract §6.3)" \
       "append to $manifest:"$'\n'"beads:"$'\n'"  - $id"$'\n'"lifecycle: beads"
   elif ! grep -qE '^lifecycle:[[:space:]]*beads[[:space:]]*$' "$manifest"; then

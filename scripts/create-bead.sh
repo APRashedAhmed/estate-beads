@@ -176,7 +176,37 @@ if [[ -n "$workunit" ]]; then
   expanded_workunit="$(eb_expand_seat_root "$workunit")"
   manifest="${expanded_workunit%/}/workunit.yaml"
   [[ -f "$manifest" ]] || die "Bead $id was created, but '$manifest' does not exist so the backlink could not be written. Create the manifest, then run: $SCRIPT_DIR/check-bead.sh --id $id. Do not re-run this script."
-  if grep -qE '^beads:' "$manifest"; then
+  if grep -qE '^beads:[[:space:]]*\[' "$manifest"; then
+    # Flow form: beads: [] or beads: [a, b]. Rebuild the list, skipping a
+    # duplicate id so a re-run never appends it twice.
+    awk -v id="$id" '
+      /^beads:[[:space:]]*\[/ {
+        line = $0
+        sub(/^beads:[[:space:]]*\[/, "", line)
+        sub(/\][[:space:]]*$/, "", line)
+        n = split(line, parts, ",")
+        found = 0
+        out = ""
+        count = 0
+        for (i = 1; i <= n; i++) {
+          item = parts[i]
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", item)
+          if (item == "") continue
+          if (item == id) found = 1
+          if (count > 0) out = out ", "
+          out = out item
+          count++
+        }
+        if (!found) {
+          if (count > 0) out = out ", "
+          out = out id
+        }
+        print "beads: [" out "]"
+        next
+      }
+      { print }
+    ' "$manifest" >"${manifest}.tmp" && mv "${manifest}.tmp" "$manifest"
+  elif grep -qE '^beads:' "$manifest"; then
     awk -v id="$id" '{print} /^beads:[[:space:]]*$/ {print "  - " id}' "$manifest" >"${manifest}.tmp" && mv "${manifest}.tmp" "$manifest"
   else
     printf 'beads:\n  - %s\n' "$id" >>"$manifest"
