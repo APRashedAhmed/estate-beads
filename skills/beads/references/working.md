@@ -58,19 +58,25 @@ only what survives as judgment; the guard's own deny message carries the rest.
    the operator only for an operator-reserved class or when no other receiver is admitted.
 9. **Report success; do not self-close.** Run
    `scripts/bead-report-success.sh --id <id> --evidence "<what you checked, where the artifacts are>"`.
-   It adds the evidence line and the `acceptance-pending` label, then branches on the Bead's `accept:`
-   label — it is the authority closing, never you:
+   It adds the evidence line and the `acceptance-pending` label, rewrites the rule-5 block's
+   `IN-PROGRESS`/`NEXT` to name the pending acceptance (contract §9 rule 9), then branches on the
+   Bead's `accept:` label — it is the authority closing, never you:
 
-   - `accept:evidence` → closes now, prints `CLOSED`.
-   - `accept:operator` → prints `ACCEPTANCE-PENDING operator` and stops. On the operator's
-     say-so in chat (design §11.6), the agent — in that later session, since the ruling always
-     arrives after this one ends — runs
+   - `accept:evidence` → closes now, prints `CLOSED`; `NEXT:` reads `none — closed`.
+   - `accept:operator` → sets `IN-PROGRESS: none — awaiting acceptance` and
+     `NEXT: acceptance — operator accepts with bead-accept.sh --id <id> --evidence <path>
+     --operator`, prints `ACCEPTANCE-PENDING operator`, and stops. On the operator's say-so in
+     chat (design §11.6), the agent — in that later session, since the ruling always arrives
+     after this one ends — runs
      `scripts/bead-accept.sh --id <id> --evidence '<the operator's message, cited>' --operator`,
-     which prints `CLOSED`. This is the SAME `--id --evidence` form `accept:evidence` uses, plus
-     the required `--operator` flag (the form refuses an `accept:operator` Bead without it, and
-     never accepts `--operator` for `accept:independent` — that mode always requires
-     `--review <report>`); the evidence cited is the operator's own words, not a file.
-   - `accept:independent` → prints `ACCEPTANCE-PENDING review`. Spawn a fresh auditor: Claude one tier above
+     which prints `CLOSED` and rewrites `NEXT:` to `none — closed`. This is the SAME
+     `--id --evidence` form `accept:evidence` uses, plus the required `--operator` flag (the
+     form refuses an `accept:operator` Bead without it, and never accepts `--operator` for
+     `accept:independent` — that mode always requires `--review <report>`); the evidence cited
+     is the operator's own words, not a file.
+   - `accept:independent` → sets `IN-PROGRESS: none — awaiting acceptance` and
+     `NEXT: acceptance — dispatch a fresh review (references/review-brief.md), then
+     bead-accept.sh --review <report>`, prints `ACCEPTANCE-PENDING review`. Spawn a fresh auditor: Claude one tier above
      your `executor.model` (same tier only when you are `fable`, the top of the ladder), or codex at
      or above your executor row in `scripts/lib/verifier-ladder.json` (the dispatcher writes the
      frontmatter and attests `spawn: fresh`; codex writes the body); never a
@@ -78,7 +84,10 @@ only what survives as judgment; the guard's own deny message carries the rest.
      `references/review-brief.md` appended to its brief. An orchestrator does the same for the
      units it delegated. Take the report it returns and run `scripts/bead-accept.sh --review
      <report>`, then branch on its line:
-     - `CLOSED` — accepted; you are done.
+     - `CLOSED` — accepted; `NEXT:` is rewritten to `none — closed`; you are done.
+     - `ACCEPTANCE-PENDING operator` (an `accept:operator` Bead reviewed PASS but not yet operator-closed)
+       — `NEXT:` is rewritten to the same operator-accept instruction `accept:operator` gets from
+       `bead-report-success.sh`, above.
      - `FAILED <cycles-left>` — the closer wrote a new `NEXT:` at the report's path and decremented
        the budget; resume from that `NEXT:`. At zero cycles the closer instead prints `HALTED`.
      - `HALTED [<reason>]` — stop; the `halt:*` label already returns the Bead to the operator.

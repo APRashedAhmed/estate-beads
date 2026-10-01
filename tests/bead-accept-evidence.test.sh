@@ -32,6 +32,11 @@ assert_eq "status is closed (evidence)" "closed" "$(printf '%s' "$bead" | jq -r 
 assert_contains "close_reason starts with 'accepted ' (evidence)" "$(printf '%s' "$bead" | jq -r '.close_reason')" "accepted $scratch/evidence-evidence.txt"
 labels="$(printf '%s' "$bead" | jq -c '.labels')"
 assert_ne "acceptance-pending was removed on close (evidence)" '["accept:evidence","acceptance-pending","class:bounded-increment","project:p"]' "$labels"
+notes="$(printf '%s' "$bead" | jq -r '.notes')"
+assert_eq "CLOSED leaves IN-PROGRESS: none (evidence), no stale value" \
+  "IN-PROGRESS: none" "$(printf '%s\n' "$notes" | grep '^IN-PROGRESS: ')"
+assert_eq "CLOSED leaves NEXT: none — closed (evidence), no stale value" \
+  "NEXT: none — closed" "$(printf '%s\n' "$notes" | grep '^NEXT: ')"
 
 # --- accept:operator refuses WITHOUT --operator, closes WITH it (N2) -----------------------------
 id="$(make_pending "Evi-operator" operator)"
@@ -49,6 +54,8 @@ assert_eq "accept:operator closes WITH --operator" "CLOSED" "$out"
 assert_rc "exits 0 (operator, --operator given)" 0 "$rc"
 bead="$(bd show --json "$id" 2>/dev/null | jq -c '.[0]')"
 assert_eq "status is closed (operator)" "closed" "$(printf '%s' "$bead" | jq -r '.status')"
+assert_eq "CLOSED leaves NEXT: none — closed (operator), no stale value" \
+  "NEXT: none — closed" "$(printf '%s' "$bead" | jq -r '.notes' | grep '^NEXT: ')"
 
 # --- accept:independent is refused outright, naming --review (N2) --------------------------------
 id="$(make_pending "Evi-independent" independent)"
@@ -106,5 +113,12 @@ assert_eq "status is closed (cross-actor)" "closed" "$(printf '%s' "$bead" | jq 
 assert_eq "assignee stays the original claimant (audit trail: who did the work)" \
   "claimant-actor" "$(printf '%s' "$bead" | jq -r '.assignee')"
 assert_contains "notes record who closed it" "$(printf '%s' "$bead" | jq -r '.notes')" "closed by closer-actor"
+
+# --- the intended whole-block NEXT rewrite on close never leaks bd's --notes-replaced warning ----
+warn="$(make_pending "WarningSuppressed" evidence)"
+errf="$scratch/accept-evidence-warning.err"
+scripts/bead-accept.sh --id "$warn" --evidence "$scratch/warning.txt" >/dev/null 2>"$errf"
+assert_eq "bead-accept --evidence close prints no bd --notes-replaced warning" \
+  "0" "$(grep -c -- '--notes replaced' "$errf" || true)"
 
 eb_report

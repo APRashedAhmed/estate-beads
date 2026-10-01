@@ -62,4 +62,14 @@ fi
 
 cmd=(bd update "$id" --notes "$block")
 [[ -n "$design_file" ]] && cmd+=(--design-file "$design_file")
-"${cmd[@]}" >/dev/null || die "'bd update $id --notes …' failed. Fix the reported cause and re-run; notes were not changed."
+
+# This is the one `bd update --notes` call that always does a whole-block rewrite by design (see
+# the file header): `bd` prints a generic "--notes replaced existing notes (use --append-notes to
+# preserve history)" warning on every such call, which is noise here, not a defect — suppress only
+# that one line, keep every other stderr line intact.
+update_err=""; update_rc=0
+update_err="$("${cmd[@]}" 2>&1 >/dev/null)" || update_rc=$?
+if [[ -n "$update_err" ]]; then
+  printf '%s\n' "$update_err" | grep -v -- '--notes replaced existing notes' >&2 || true
+fi
+[[ "$update_rc" -eq 0 ]] || die "'bd update $id --notes …' failed. Fix the reported cause and re-run; notes were not changed."

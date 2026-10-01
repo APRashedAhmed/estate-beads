@@ -5,6 +5,7 @@
 # Decision vocabulary on stdout, one line: CLOSED | ACCEPTANCE-PENDING <authority>.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SELF="bead-report-success"
 die() { printf '%s: %s\n' "$SELF" "$1" >&2; exit "${2:-1}"; }
 
@@ -34,6 +35,8 @@ bd update "$id" --add-label "acceptance-pending" >/dev/null \
   || die "the evidence line landed but 'acceptance-pending' did not. Run: bd update $id --add-label acceptance-pending"
 
 if [[ "$mode" == "evidence" ]]; then
+  "$SCRIPT_DIR/bead-progress.sh" --id "$id" --preserve --in-progress "none" --next "none — closed" \
+    || die "the evidence line landed but the rule-5 NEXT rewrite failed. Run: $SCRIPT_DIR/bead-progress.sh --id $id --preserve --in-progress 'none' --next 'none — closed'"
   bd close "$id" --reason accepted >/dev/null \
     || die "the label landed but the close failed. Fix the reported cause, then run: bd close $id --reason accepted"
   printf 'CLOSED\n'
@@ -42,7 +45,12 @@ fi
 
 if [[ "$mode" == "independent" ]]; then
   # design §13: accept:independent is review-accepted; the executor dispatches a fresh review
-  # and runs `bead-accept.sh --review <report>` on its verdict (contract §9 rule 9).
+  # and runs `bead-accept.sh --review <report>` on its verdict. Until that acceptance lands, NEXT
+  # names it as the pending step (contract §9 rule 9).
+  "$SCRIPT_DIR/bead-progress.sh" --id "$id" --preserve \
+    --in-progress "none — awaiting acceptance" \
+    --next "acceptance — dispatch a fresh review (references/review-brief.md), then bead-accept.sh --review <report>" \
+    || die "the evidence line landed but the rule-5 NEXT rewrite failed. Run: $SCRIPT_DIR/bead-progress.sh --id $id --preserve --in-progress 'none — awaiting acceptance' --next 'acceptance — dispatch a fresh review (references/review-brief.md), then bead-accept.sh --review <report>'"
   printf 'ACCEPTANCE-PENDING review\n'
   exit 0
 fi
@@ -50,7 +58,12 @@ fi
 case "$mode" in
   # contract §5.4 token is exactly "ACCEPTANCE-PENDING operator" (fix round 1, minor: was
   # printing "ACCEPTANCE-PENDING the operator", which no emitter/consumer/test agreed on).
-  operator)    authority="operator" ;;
+  operator)
+    "$SCRIPT_DIR/bead-progress.sh" --id "$id" --preserve \
+      --in-progress "none — awaiting acceptance" \
+      --next "acceptance — operator accepts with bead-accept.sh --id $id --evidence <path> --operator" \
+      || die "the evidence line landed but the rule-5 NEXT rewrite failed. Run: $SCRIPT_DIR/bead-progress.sh --id $id --preserve --in-progress 'none — awaiting acceptance' --next 'acceptance — operator accepts with bead-accept.sh --id $id --evidence <path> --operator'"
+    authority="operator" ;;
   *)           authority="the authority named by accept:${mode}" ;;
 esac
 printf 'ACCEPTANCE-PENDING %s\n' "$authority"

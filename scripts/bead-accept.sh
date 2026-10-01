@@ -88,6 +88,10 @@ eb_close_or_restore() {  # <id> <orig-notes> <evidence-line> <close-reason> <ret
 
   bd update "$id" --append-notes "$evidence_line" >/dev/null \
     || die "'bd update $id --append-notes' failed. Fix the reported cause and re-run; nothing was changed."
+  "$SCRIPT_DIR/bead-progress.sh" --id "$id" --preserve --in-progress "none" --next "none — closed" || {
+    bd update "$id" --notes "$orig_notes" >/dev/null 2>&1
+    die "the rule-5 NEXT rewrite failed; restored the prior notes (the EVIDENCE append is undone too). Fix the reported cause, then re-run: $retry_hint"
+  }
   bd update "$id" --remove-label "acceptance-pending" >/dev/null \
     || die "the evidence line landed but removing 'acceptance-pending' failed. Run: bd update $id --remove-label acceptance-pending"
   if ! bd close "$id" "${close_args[@]}" >/dev/null; then
@@ -225,6 +229,10 @@ case "$r_verdict" in
       operator)
         bd update "$r_bead" --append-notes "$evidence_line" >/dev/null \
           || die "'bd update $r_bead --append-notes' failed. Fix the reported cause and re-run; nothing was changed."
+        "$SCRIPT_DIR/bead-progress.sh" --id "$r_bead" --preserve \
+          --in-progress "none — awaiting acceptance" \
+          --next "acceptance — operator accepts with bead-accept.sh --id $r_bead --evidence <path> --operator" \
+          || die "the evidence line landed but the rule-5 NEXT rewrite failed. Run: $SCRIPT_DIR/bead-progress.sh --id $r_bead --preserve --in-progress 'none — awaiting acceptance' --next 'acceptance — operator accepts with bead-accept.sh --id $r_bead --evidence <path> --operator'"
         printf 'ACCEPTANCE-PENDING operator\n'
         ;;
       *) die "Bead $r_bead carries an unrecognized accept: mode '$b_accept'." ;;

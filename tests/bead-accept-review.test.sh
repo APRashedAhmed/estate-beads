@@ -41,10 +41,19 @@ for mode in evidence independent operator; do
   if [[ "$mode" == "operator" ]]; then
     assert_eq "PASS on accept:operator prints ACCEPTANCE-PENDING operator" "ACCEPTANCE-PENDING operator" "$out"
     assert_eq "accept:operator stays acceptance-pending" "in_progress" "$(printf '%s' "$bead" | jq -r '.status')"
+    assert_eq "PASS on accept:operator sets IN-PROGRESS: none — awaiting acceptance" \
+      "IN-PROGRESS: none — awaiting acceptance" "$(printf '%s' "$bead" | jq -r '.notes' | grep '^IN-PROGRESS: ')"
+    assert_eq "PASS on accept:operator NEXT names the operator-accept command" \
+      "NEXT: acceptance — operator accepts with bead-accept.sh --id $id --evidence <path> --operator" \
+      "$(printf '%s' "$bead" | jq -r '.notes' | grep '^NEXT: ')"
   else
     assert_eq "PASS closes ($mode)" "CLOSED" "$out"
     assert_eq "status closed ($mode)" "closed" "$(printf '%s' "$bead" | jq -r '.status')"
     assert_contains "close_reason is 'accepted <report path>' ($mode)" "$(printf '%s' "$bead" | jq -r '.close_reason')" "accepted $r"
+    assert_eq "CLOSED leaves IN-PROGRESS: none ($mode), no stale value" \
+      "IN-PROGRESS: none" "$(printf '%s' "$bead" | jq -r '.notes' | grep '^IN-PROGRESS: ')"
+    assert_eq "CLOSED leaves NEXT: none — closed ($mode), no stale value" \
+      "NEXT: none — closed" "$(printf '%s' "$bead" | jq -r '.notes' | grep '^NEXT: ')"
   fi
 done
 
@@ -283,5 +292,25 @@ fid="$(inprog_fail "NoLadderFailCont" "" 2)"
 assert_eq "FAIL with cycles left, no override: notes carry none" "0" "$(notes_of "$fid" | grep -c "ladder override:")"
 fid="$(inprog_fail "NoLadderFailHalt" "" 1)"
 assert_eq "FAIL that halts, no override: notes carry none" "0" "$(notes_of "$fid" | grep -c "ladder override:")"
+
+# --- the intended whole-block NEXT rewrite (PASS close, PASS operator-pending, FAIL) never leaks
+#     bd's --notes-replaced warning -----------------------------------------------------------------
+id="$(report_pending "WarningClose" evidence sonnet)"
+r="$REPORTS/warning-close.md"; eb_write_review "$r" "$id" PASS opus fresh ""
+errf="$scratch/warning-close.err"
+scripts/bead-accept.sh --review "$r" >/dev/null 2>"$errf"
+assert_eq "PASS close prints no bd --notes-replaced warning" "0" "$(grep -c -- '--notes replaced' "$errf" || true)"
+
+id="$(report_pending "WarningOperator" operator sonnet)"
+r="$REPORTS/warning-operator.md"; eb_write_review "$r" "$id" PASS opus fresh ""
+errf="$scratch/warning-operator.err"
+scripts/bead-accept.sh --review "$r" >/dev/null 2>"$errf"
+assert_eq "PASS on accept:operator prints no bd --notes-replaced warning" "0" "$(grep -c -- '--notes replaced' "$errf" || true)"
+
+id="$(report_pending "WarningFail" independent sonnet)"
+r="$REPORTS/warning-fail.md"; eb_write_review "$r" "$id" FAIL opus fresh ""
+errf="$scratch/warning-fail.err"
+scripts/bead-accept.sh --review "$r" >/dev/null 2>"$errf"
+assert_eq "FAIL prints no bd --notes-replaced warning" "0" "$(grep -c -- '--notes replaced' "$errf" || true)"
 
 eb_report
