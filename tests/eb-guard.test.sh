@@ -20,7 +20,11 @@ source "$ROOT/tests/_scratch_db.sh"
 
 GENERIC_CWD="$(mktemp -d)"
 NONGIT_CWD="$(mktemp -d)"
-GIT_CWD="$ROOT"
+# row20 needs a cwd that IS a git repo. The plugin ROOT itself may or may not be one (it isn't
+# when this suite runs from an installed, non-git cache copy), so mint a throwaway repo instead
+# of relying on the ambient root's git-repo-ness.
+GIT_CWD="$(mktemp -d)"
+git init -q "$GIT_CWD"
 
 # A scratch db with one open and one closed Bead, for the `--status open` checks that need a
 # live `bd show`.
@@ -103,5 +107,5 @@ else
   eb_bad "m4: guard's inner bd-show timeout < PreToolUse hook timeout" "inner=${inner_timeout}s hook=${hook_timeout}s"
 fi
 
-rm -rf "$scratch" "$GENERIC_CWD" "$NONGIT_CWD"
+rm -rf "$scratch" "$GENERIC_CWD" "$NONGIT_CWD" "$GIT_CWD"
 eb_report
