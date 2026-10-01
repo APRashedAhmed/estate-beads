@@ -14,8 +14,11 @@
 # Commands:
 #   bead-scratch.sh new [--prefix P]
 #       Creates a fresh scratch database under the root and prints exactly one line:
-#       `BEADS_DIR=<path>/.beads` — a caller can use it as a prefix for later `bd`/script calls
-#       (`eval "$(bash bead-scratch.sh new)"; BEADS_DIR=$BEADS_DIR bd ...`) or parse the value.
+#       `BEADS_DIR=<path>/.beads`. For one-shot use, prefer `run --` below. For multi-step use,
+#       read the printed line, then pass the LITERAL path as a prefix on each later, SEPARATE
+#       call: `bash bead-scratch.sh new` (note the printed `BEADS_DIR=<path>/.beads`), then
+#       `BEADS_DIR=<path>/.beads bd list --json` — do NOT `eval`/capture-and-chain in one
+#       command; the guard denies that form (it cannot resolve the command word).
 #       The folder is NOT cleaned up automatically; the caller is responsible for `rm <path>`.
 #   bead-scratch.sh rm <path>
 #       Deletes `<path>` iff it resolves to a folder under the scratch root AND carries this
