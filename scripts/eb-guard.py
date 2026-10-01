@@ -58,9 +58,10 @@ import sys
 
 DENY_MESSAGES = {
     "init": (
-        "bd init is denied except the scratch form `env -u BEADS_DIR bd init ...` run with a "
-        "cwd outside any git repository. See references/authoring.md and README.md 'Known gaps' "
-        "for the transition-window note."
+        "Raw bd init is denied, always — there is no cwd-based exception. Use scripts/"
+        "bead-scratch.sh for a throwaway Beads database: "
+        "`bash \"$(bash <plugin>/bin/eb-root.sh plugin)/scripts/bead-scratch.sh\" new` "
+        "(or `run -- <cmd>`); see references/authoring.md and README.md."
     ),
     "delete": "bd delete is denied. There is no script wrapper; this operation is off-limits from a Bash call.",
     "remember": "bd remember is denied. There is no script wrapper; this operation is off-limits from a Bash call.",
@@ -1045,10 +1046,11 @@ def _skip_global_flags(args):
 
 def _recursive_bd_deny(text, cwd, depth, outer_assigns=None, outer_command=""):
     """F3: does executing `text` as a nested shell command invoke a `bd` verb the guard would
-    deny? Recurses through the same tokenizer/judge path (same `cwd`, so `bd show`/scratch-init
-    checks inside the nested string still see the real hook payload's cwd). Returns a
-    deny-reason-key, or None. Depth-capped against pathological nesting; a ParseFailure that
-    still textually mentions `bd` fails closed, matching the top-level contract."""
+    deny? Recurses through the same tokenizer/judge path (same `cwd`, so a `bd show` inside the
+    nested string still sees the real hook payload's cwd — `bd init` no longer depends on cwd at
+    all, pa-e38.8). Returns a deny-reason-key, or None. Depth-capped against pathological nesting;
+    a ParseFailure that still textually mentions `bd` fails closed, matching the top-level
+    contract."""
     if depth > 8:
         return "parse-failure" if BD_TOKEN_RE.search(text) else None
     try:
@@ -1200,26 +1202,6 @@ def _first_positional(args):
     return None
 
 
-# --- the scratch bd-init allow exception -----------------------------------------------------
-def _is_scratch_env_prefix(pre_tokens):
-    return pre_tokens == ["env", "-u", "BEADS_DIR"]
-
-
-def _cwd_outside_git_repo(cwd):
-    if not cwd or not os.path.isdir(cwd):
-        return False  # unresolved/nonexistent cwd never earns the scratch exception
-    try:
-        r = subprocess.run(
-            ["git", "-C", cwd, "rev-parse", "--git-dir"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except Exception:
-        return False
-    return r.returncode != 0
-
-
 # m4 (review pa-s2s.8-review-1): must be STRICTLY LESS than hooks.json's PreToolUse timeout (10s)
 # — portability-contract.md §7's "a timed-out PreToolUse hook renders no decision" means a `bd
 # show` that runs out the FULL hook budget fails OPEN on `update --status open`, not closed. A
@@ -1289,8 +1271,11 @@ def judge_segment(segment, cwd, depth=0, original_command="", assigns=None):
         canonical = VERB_ALIASES.get(verb, verb)
 
         if canonical == "init":
-            if _is_scratch_env_prefix(pre_tokens) and _cwd_outside_git_repo(cwd):
-                return None
+            # pa-e38.8: the old cwd-outside-git-repo scratch allow is removed — a cwd-pinned
+            # agent (one whose hook payload's cwd is always inside a git repo) could never
+            # satisfy it, so it could never reach a scratch database at all. Every direct
+            # `bd init` is denied now, unconditionally; scripts/bead-scratch.sh is the only
+            # sanctioned path (fixed root under $XDG_RUNTIME_DIR/estate-beads-scratch, not cwd).
             return "init"
 
         if canonical in ("delete", "remember", "edit", "sql", "forget"):
