@@ -13,6 +13,13 @@ source "$ROOT/tests/_assert.sh"
 # shellcheck source=_scratch_db.sh
 source "$ROOT/tests/_scratch_db.sh"
 
+# Hermeticity (review MINOR-2): the SessionStart/SessionEnd sweeps run against
+# $EB_SCRATCH_ROOT/${XDG_RUNTIME_DIR:-/tmp}/estate-beads-scratch when unset. Pin it to a
+# throwaway root this suite owns so the sweeps never touch the operator's real scratch folders.
+EB_SESSION_TEST_SCRATCH_ROOT="$(mktemp -d)"
+export EB_SCRATCH_ROOT="$EB_SESSION_TEST_SCRATCH_ROOT"
+trap 'rm -rf "$EB_SESSION_TEST_SCRATCH_ROOT"' EXIT
+
 sessionstart_payload() {  # <session-id>
   printf '{"session_id":"%s","source":"startup","hook_event_name":"SessionStart"}' "$1"
 }
