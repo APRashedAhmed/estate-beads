@@ -188,42 +188,43 @@ PYEOF
              || eb_bad "N1: a pending Bead held by a LIVE session gets no advisory at all"
 rm -f "$ENVFILE2E"
 
-# --- 5/5b timing model (F1, pa-e38.6): the old asserts used a hardcoded 1s/1.5s wall-clock
-#     budget, which flakes under CPU load that has nothing to do with the handler — the box is
-#     merely slower at spawning `bd`/python processes, not the handler doing unbounded work.
-#     Per portability-contract.md §5.5, Claude shares a ~1.5s budget across SessionEnd hooks;
-#     eb-session-end.sh's own TOTAL_BUDGET_SECONDS (default 1.3s, scripts/eb-session-end.sh:27)
-#     targets that by design, backgrounding the per-Bead note phase under a watchdog deadline.
-#     So ANY fixed threshold under ~1.3s is wrong independent of load, and a pure wall-clock cap
-#     can't distinguish "this box is slow right now" from "the handler is doing unbounded work".
+# --- 5/5b timing model (F1, pa-e38.6; fix round 2, review pa-e38.6-review-1 MAJOR-1): the old
+#     asserts used a hardcoded 1s/1.5s wall-clock budget, which flakes under CPU load that has
+#     nothing to do with the handler — the box is merely slower at spawning `bd`/python processes,
+#     not the handler doing unbounded work. Per portability-contract.md §5.5, Claude shares a
+#     ~1.5s budget across SessionEnd hooks; eb-session-end.sh's own TOTAL_BUDGET_SECONDS (default
+#     1.3s, scripts/eb-session-end.sh:27) targets that by design, backgrounding the per-Bead note
+#     phase under a watchdog deadline.
 #
-#     Model instead: measure a same-run BASELINE cost of the handler's own phase-1 call (a bare
-#     `bd list --status in_progress --json`) immediately before each timed run, on the same
-#     scratch db, under whatever load is currently present. Phase 1 of eb-session-end.sh is
-#     exactly ONE `bd list` + ONE batched `bd update` per distinct assignee (never one call per
-#     Bead — true for both the single-claim and the 3-claims-same-assignee cases here), so:
-#       threshold_ms = 2*baseline_ms (phase 1: list + batched update) + budget_ms (phase 2's own
-#                      watchdog deadline) + margin_ms (python/awk/watchdog spawn overhead, scaled
-#                      with baseline so it inflates under the same load the baseline saw)
-#     This scales with ambient load automatically (baseline is measured live, same run, same box)
-#     instead of guessing a load-free wall-clock number.
+#     Round 1 scaled the whole threshold off a same-run baseline (2*B + budget + margin), which on
+#     a quiet machine (B ~ 180ms) came out near 1960ms — above the contract's own 1.5s bound, so a
+#     handler that drifts to 1.6-1.9s on an idle box passed. Fixed here: anchor the threshold AT
+#     the contract's 1500ms, and widen it only by load-attributable EXTRA baseline cost above a
+#     quiet-machine reference (B_QUIET_MS). k=3 approximates the handler's own `bd` call count
+#     (phase 1: one `bd list` + one batched `bd update`; phase 2 watchdog/python overhead scales
+#     similarly), so the widening tracks how much slower `bd` itself has gotten under load, not an
+#     arbitrary multiple of the (already-inflated) baseline.
+#       threshold_ms = 1500 + k * max(0, baseline_ms - B_QUIET_MS)
+#     B_QUIET_MS=250 is set above the idle `bd list` cost measured on this box (8 runs, scratch db,
+#     no synthetic load: 174-222ms, typical ~180ms — see pa-e38.6-round2.md for the measurement),
+#     so a quiet run's margin term is 0 and the threshold sits exactly at the contract figure.
 #
 #     That alone isn't enough: a stub that slows down EVERY `bd` invocation (including the
-#     baseline call) would inflate the baseline right along with the real run and never trip the
-#     threshold. So also enforce an absolute CEILING at 3x the contract's own figure
-#     (3 * 1500ms = 4500ms) as a backstop that does not scale with a corrupted baseline — a
-#     handler that is genuinely, unboundedly slow blows through this regardless of what the
-#     baseline measured. A run must satisfy BOTH checks to pass.
+#     baseline call) would inflate the baseline right along with the real run and could still
+#     widen the threshold past a genuinely slow handler. So also enforce an absolute CEILING at 3x
+#     the contract's own figure (3 * 1500ms = 4500ms) as a backstop that does not scale with a
+#     corrupted baseline — a handler that is genuinely, unboundedly slow blows through this
+#     regardless of what the baseline measured. A run must satisfy BOTH checks to pass.
 EB_SESSION_END_CONTRACT_MS=1500
 EB_SESSION_END_CEILING_MS=$((EB_SESSION_END_CONTRACT_MS * 3))
-EB_SESSION_END_BUDGET_S="${EB_SESSION_END_BUDGET:-1.3}"
-EB_SESSION_END_BUDGET_MS=$(awk -v b="$EB_SESSION_END_BUDGET_S" 'BEGIN { printf "%d", (b*1000)+0.5 }')
+EB_SESSION_END_B_QUIET_MS="${EB_SESSION_END_B_QUIET_MS:-250}"
+EB_SESSION_END_LOAD_K="${EB_SESSION_END_LOAD_K:-3}"
 
 eb_timing_verdict() {  # <description> <baseline_ms> <elapsed_ms>
-  local desc="$1" baseline_ms="$2" elapsed_ms="$3" margin_ms threshold_ms
-  margin_ms="$baseline_ms"
-  [ "$margin_ms" -lt 300 ] && margin_ms=300
-  threshold_ms=$((2*baseline_ms + EB_SESSION_END_BUDGET_MS + margin_ms))
+  local desc="$1" baseline_ms="$2" elapsed_ms="$3" excess_ms threshold_ms
+  excess_ms=$((baseline_ms - EB_SESSION_END_B_QUIET_MS))
+  [ "$excess_ms" -lt 0 ] && excess_ms=0
+  threshold_ms=$((EB_SESSION_END_CONTRACT_MS + EB_SESSION_END_LOAD_K * excess_ms))
   if [ "$elapsed_ms" -le "$threshold_ms" ] && [ "$elapsed_ms" -le "$EB_SESSION_END_CEILING_MS" ]; then
     eb_ok "$desc (${elapsed_ms}ms; baseline ${baseline_ms}ms, threshold ${threshold_ms}ms, ceiling ${EB_SESSION_END_CEILING_MS}ms)"
   else
