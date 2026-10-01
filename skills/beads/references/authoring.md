@@ -169,23 +169,30 @@ has no Bead, author its Bead before anything else.
 6. Claim it (`references/working.md`, rule 2) if you are continuing the work; otherwise leave it
    open.
 
-## Scratch databases: isolation is `$BEADS_DIR`, not cwd
+## Scratch databases: `scripts/bead-scratch.sh`, never a raw `bd init`
 
-`bd` ignores cwd entirely — `$BEADS_DIR` is the only scoping lever. With the estate export active, a
-scratch `bd init` aborts ("Found existing Dolt database") and a later `bd create` writes straight to
-the **estate** database instead; cwd gives no protection.
+`bd` ignores cwd entirely — `$BEADS_DIR` is the only scoping lever. A raw `bd init` can collide with
+an already-initialized database ("Found existing Dolt database") and a later `bd create` then writes
+straight to the **estate** database instead; cwd gives no protection. `scripts/eb-guard.py` denies
+every direct `bd init`, unconditionally — there is no cwd-based exception (pa-e38.8 removed the prior
+cwd-outside-git-repo allow: a cwd-pinned agent, one whose Bash hook payload's cwd is always inside a
+git repository, could never satisfy it, so it could never reach a scratch database at all).
 
-Recipe for a real scratch database, run from a session whose cwd is outside any git repository —
-the guard judges the hook payload's cwd, not an in-command `cd`, so the `(cd "$scratch" && …)` form
-below is denied from any session whose cwd is inside a git repository, this worktree included:
+`scripts/bead-scratch.sh` is the only sanctioned path. It creates its databases under a FIXED root
+(`${EB_SCRATCH_ROOT:-${XDG_RUNTIME_DIR:-/tmp}/estate-beads-scratch}`), never under cwd, so it works
+identically from any session, cwd-pinned or not:
 
 ```bash
-(cd "$scratch" && env -u BEADS_DIR bd init --skip-hooks --skip-agents --non-interactive --prefix t)
+bash "$(bash <plugin-root>/bin/eb-root.sh plugin)/scripts/bead-scratch.sh" run -- bd create "..." --json
 ```
 
-then `BEADS_DIR="$scratch/.beads" bd …` (or the equivalent flag on a script) for **every** later
-command. Never point `$BEADS_DIR` at the estate database from a probe. A `bd create`/`bd update` run
-in a non-git scratch directory also prints `warning: beads.role not configured (GH#2950)` on stderr —
-noise, not a finding; the estate database repo sets `beads.role=maintainer`, so it only appears
-against scratch databases. Tests exercise this through `tests/_scratch_db.sh`, which runs from
-outside any git repository.
+`run -- <cmd...>` creates a scratch database, exports `$BEADS_DIR` for `<cmd...>`, and deletes the
+database on exit — success, failure, or an uncaught signal — then exits with `<cmd...>`'s own code.
+For a database that must outlive one command, use `new` (prints `BEADS_DIR=<path>/.beads`, one line)
+and clean up later with `rm <path>` — `rm` refuses anything not under the scratch root and marked by
+this script, so it can never be pointed at the estate database by mistake. Never point `$BEADS_DIR`
+at the estate database from a probe. A `bd create`/`bd update` run against a scratch database also
+prints `warning: beads.role not configured (GH#2950)` on stderr — noise, not a finding; the estate
+database repo sets `beads.role=maintainer`, so it only appears against scratch databases. Tests
+exercise this through `tests/bead-scratch.test.sh` and `tests/_scratch_db.sh` (the latter still used
+by other suites — see README.md's "Known gaps" for the split).

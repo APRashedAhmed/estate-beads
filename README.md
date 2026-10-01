@@ -14,6 +14,9 @@ Beads work-tracking for the estate: create, claim, report, accept, close, releas
   subagent; a fresh spawn, never a fork.
 - **Hooks** `hooks/hooks.json` — `scripts/eb-guard.py` (`PreToolUse(Bash)`), `scripts/eb-session-start.sh`,
   `scripts/eb-session-end.sh`. See the support matrix below.
+- **Script** `scripts/bead-scratch.sh` — the only sanctioned `bd init`: a throwaway Beads database
+  under a fixed root, with built-in cleanup (`new`/`rm`/`run -- <cmd>`); see
+  `skills/beads/references/authoring.md`.
 
 ## Dependencies
 PyYAML (`python3 -c 'import yaml'`), used by `scripts/lib/frontmatter.py` (review-report
@@ -72,12 +75,20 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
   stay keyed under the **main session's** bare session id. `[unverified]`: whether a `PreToolUse`
   hook firing on the subagent's own Bash calls receives `agent_id` in its payload — a candidate
   fix, not built or probed here.
-- **Transition-window scratch `bd init` (P2 PARTIAL, U1).** A `permissions.deny` rule on `bd init`
-  in the live settings wins over this hook's `allow` (confirmed by probe, not inferred). Until
-  U8's retirement commit B removes the settings deny rules, scratch `bd init` for probing/testing
-  is only possible under an isolated settings source
-  (`claude -p --setting-sources "" --settings <file>`), not in a normal session — this guard's
-  scratch-form allow is inert against the live deny in the meantime.
+- **Scratch `bd init` — closed (pa-e38.8).** The guard's old cwd-outside-git-repo allow for `bd
+  init` is removed — a cwd-pinned agent (one whose Bash hook payload's cwd is always inside a git
+  repository, e.g. a worktree-bound subagent) could never satisfy it, so it could never reach a
+  scratch database at all. `scripts/eb-guard.py` now denies EVERY direct `bd init`, unconditionally,
+  naming `scripts/bead-scratch.sh` as the replacement. That script opens its databases under a
+  fixed root (`${EB_SCRATCH_ROOT:-${XDG_RUNTIME_DIR:-/tmp}/estate-beads-scratch}`, never cwd), so it
+  reaches a scratch database from any session — `new`/`rm <path>` for a database that outlives one
+  command, `run -- <cmd...>` for one that doesn't (deletes on exit, success or failure). Cleanup
+  also runs at `SessionEnd` (the ending session's own folders) and at `SessionStart` (a 24h sweep),
+  both touching only folders this script marked. See `skills/beads/references/authoring.md`.
+  `tests/_scratch_db.sh` (the test-only helper this script was promoted FROM) stays as-is — it is
+  sourced by ~15 existing suites and runs in-process (exports `BEADS_DIR`/`HOME`/`XDG_CONFIG_HOME`
+  into the calling test's own shell, which `bead-scratch.sh` deliberately does not do); reworking
+  it to call `bead-scratch.sh` was out of scope for this unit.
 - **`bd` verb aliases (fix round 1, F1) — closed.** `done`→`close`, `new`/`q`/`create-form`→`create`,
   `note`→`update --append-notes`, and `-s`/`-s=`→`--status` are now canonicalized before judging
   (`scripts/eb-guard.py`'s `VERB_ALIASES` table) and denied with the same message as their
@@ -148,9 +159,6 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
   claims release (status+assignee, asserted by `tests/eb-session.test.sh`) in ~1.31s on a scratch
   db, under the ~1.5s shared budget — but the deadline can still truncate the note-writing phase
   for a large claim count; the release state itself is unaffected.
-- **Scratch-allow reachability, checked live:** `git -C $SEAT_ROOT/scratch rev-parse --git-dir`
-  and `git -C $SEAT_ROOT rev-parse --git-dir` both report "not a git repository" — the scratch
-  form's cwd-outside-git-repo check is satisfiable at the estate's actual scratch path.
 - **Guard inner `bd show` timeout (fix round 2, m4) — closed.** Was equal to the PreToolUse hook
   timeout (10s); now `BD_SHOW_TIMEOUT = 5` in `scripts/eb-guard.py`, strictly under it, so a slow
   `bd show` times out INSIDE the guard's own budget and fails closed (`deny`) rather than running
@@ -183,10 +191,10 @@ already excludes `Agent`, so the hook was redundant, and dropping it removes the
 dependency on `~/.claude/agents/estate/`.
 
 **The prose/script/hook boundary (design §5).** Every guard the deployed skill stated in prose now
-has a mechanism: the `PreToolUse(Bash)` guard (`scripts/eb-guard.py`) denies `bd init` (outside the
-scratch form), `delete`, `remember`, `edit`, `sql`, raw `create`, raw `close`/`update --status
-closed`, `update --status open` on a closed Bead, and raw `--append-notes` — each deny message names
-the sanctioned script. Every prose sentence that only warned about a mistake the hook now makes
+has a mechanism: the `PreToolUse(Bash)` guard (`scripts/eb-guard.py`) denies `bd init` (every direct
+invocation, unconditionally — `scripts/bead-scratch.sh` is the only path, pa-e38.8), `delete`,
+`remember`, `edit`, `sql`, raw `create`, raw `close`/`update --status closed`, `update --status open`
+on a closed Bead, and raw `--append-notes` — each deny message names the sanctioned script. Every prose sentence that only warned about a mistake the hook now makes
 unreachable was deleted rather than kept as a redundant warning; see
 `$SEAT_ROOT/PerAnkh/projects/permaat/workunits/2026-09-24-beads-skill-redesign/reviews/u4-skill.md`
 for the sentence-by-sentence table. Rules 3, 8, 10, and the T1–T5 gate's judgment stay prose — they
