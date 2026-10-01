@@ -15,6 +15,11 @@ Contract (design §12.1 / portability-contract.md §7, governed seam, fails clos
     matching literal assignment, or a `$( )`/backtick command substitution, which is never
     resolved) is allowed — this guard never blanket-denies on the mere textual presence of `bd`
     elsewhere in the command (fix round 2, N3 — reverts a fix round 1 deviation).
+    Exception (pa-e38.1 round 2, B3; fail-closed rows win over N3): a command word whose
+    basename comes from a command substitution, or from a variable this same command assigns
+    from a substitution or another expansion, is DENIED when the command mentions `bd` anywhere
+    (`$(command -v bd) close x`, `P=$(printf bd); $P close x`). An unbound variable (`$EDITOR`)
+    keeps the N3 allow.
 
 Tokenization: split on `&&`, `||`, `;`, `|`, `&`, `|&`, and (quote-aware) bare newlines, recursing into
 `$( )`, backtick, and `( )` bodies and heredoc bodies. A segment "invokes bd" when its first
@@ -23,16 +28,19 @@ A heredoc body fed to a shell/evaluator (`bash`, `sh`, `zsh`, `dash`, `ksh`, `ev
 is parsed as a command and denied on either a recognized `bd` invocation or a parse failure that
 still mentions `bd`; a heredoc body fed to anything else (`cat`, `tee`, a file, ...) is treated as
 data, and a body line `shlex` cannot parse degrades to a per-line first-token check instead of
-failing the whole command closed (fix round 2, N4).
+failing the whole command closed (fix round 2, N4). A consumer is also shell-fed when the rest of
+its `<<` line pipes or chains to a shell (`cat <<EOF | sh`); a body fed to an interpreter
+(`python3`, `perl`, `node`, ...) denies when it mentions `bd` anywhere (pa-e38.1 round 2, B2).
 
 Output: silent (no stdout), exit 0 on allow. On deny: the vcs-rails PreToolUse JSON deny shape
 on stdout, exit 0 (a `permissionDecision` verdict, not a hook crash).
 
 A genuine tokenizer `ParseFailure` on the extracted `command` text (B2/B8, pa-e38.1) falls back to
-`_bd_outside_quotes_and_heredocs`: deny only when `bd` appears as a command word outside quoted
-text and outside a DATA-fed heredoc body's prose lines (a `bd`-command-position line inside a
-data-fed body, or anywhere in a SHELL-fed body, still denies — see that function's docstring) —
-never on a bare textual `bd` match inside quotes or heredoc prose.
+`_parse_failure_should_deny`: a `bd` mention that sits only in quoted text or in a terminated,
+non-expanding heredoc body read by a known data consumer is allowed; everything else denies. The
+fallback masks nothing unless `_ShellScan` models the whole command exactly, so ANSI-C quoting,
+an unbalanced quote, an unterminated heredoc, or any word that can execute a string or a heredoc
+(a shell, `eval`, `source`, an interpreter, ...) sends it back to deny-on-any-`bd` (round 2, B1/B2).
 
 Any OTHER exception anywhere in this script (e.g. malformed JSON on stdin, before `command` is
 even extracted) is caught by the outermost guard: fall back to a raw substring/word-boundary
@@ -73,6 +81,9 @@ DENY_MESSAGES = {
     "import": "bd import is denied. It upserts issues, including status, bypassing every guarded seam; there is no script wrapper. This operation is off-limits from a Bash call.",
     "prune": "bd prune is denied. It permanently deletes closed Beads; there is no script wrapper. This operation is off-limits from a Bash call.",
     "purge": "bd purge is denied. It permanently deletes closed ephemeral Beads; there is no script wrapper. This operation is off-limits from a Bash call.",
+    # Round 2 (review pa-e38.1-review-1 B2/B3).
+    "unresolved-indirection": "This command runs a command word the guard cannot resolve (a command substitution, or a variable this command assigns from one) and the command mentions `bd` — denied to fail closed (design §12.1). Call bd by name, or split the assignment and the bd call into separate Bash calls.",
+    "exec-heredoc": "This command feeds a heredoc that mentions `bd` to an interpreter whose code the guard cannot judge — denied to fail closed (design §12.1).",
     "forget": "bd forget is denied (the inverse of the denied `bd remember`). There is no script wrapper; this operation is off-limits from a Bash call.",
 }
 
@@ -92,118 +103,364 @@ VERB_ALIASES = {
 }
 
 BD_TOKEN_RE = re.compile(r"\bbd\b")
+# A synthetic segment `[_DENY_SENTINEL, reason_key]` lets the tokenizer carry a verdict it
+# reached on its own (an interpreter-fed heredoc mentioning `bd`) to `judge_segment`.
+_DENY_SENTINEL = "\x00eb-deny"
 
 
 class ParseFailure(Exception):
     pass
 
 
-# --- B8 (pa-e38.1): genuine-parse-failure fallback, narrowed to command-position `bd` ----------
-# `main()`'s outermost ParseFailure handler used to deny on a bare `BD_TOKEN_RE.search(command)` —
-# a `bd` mention ANYWHERE in the raw text, including inside quoted prose or a heredoc body that is
-# pure DATA. A command whose only unparseable part is e.g. a mismatched heredoc delimiter, with
-# "bd" mentioned only in prose, was denied for a word that was never going to run.
-#
-# `_bd_outside_quotes_and_heredocs` masks out quoted spans before the `bd`-presence check
-# (best-effort, lenient — unlike `_extract_heredocs` this never raises on a missing/mismatched
-# terminator; it treats everything from the `<<WORD` line to either the real terminator or the
-# end of the string as body). A SHELL-fed heredoc body (consumer `bash`/`sh`/`eval`/... — same
-# `_heredoc_consumer_name` resolution `_extract_heredocs` uses) is EXECUTED code, not data: its
-# own unresolved quote state is exactly the "recognized bd invocation, no verdict" failure the
-# top-level parse-failure deny already covers (N4), so it is searched for `bd` directly, textually
-# — never masked by its own (possibly broken) quoting. This keeps the existing shell-fed-heredoc
-# deny rows (e.g. a heredoc body with an unterminated quote that still mentions `bd`) denying. A
-# DATA-fed heredoc body (`cat`, `tee`, a file, ...) is prose UNLESS one of its own lines, piped
-# onward to a shell by the surrounding command (`cat <<EOF | bash`), is itself a `bd` invocation —
-# so a data-fed body gets the SAME per-line first-token check `tokenize_segments`'s m2 degrade
-# path already applies (a line whose first token's basename is `bd` denies; an ordinary prose
-# line, e.g. "The tracker CLI is bd.", does not). This keeps a `bd`-command-position line in a
-# data-fed body denying (matching `row11-heredoc-close`'s normal-path verdict) while a `bd`
-# MENTION in data-fed prose is allowed even after a parse failure. Fail-closed is otherwise
-# unchanged: `bd` as a real, unquoted, non-heredoc command-word token still denies even though the
-# rest of the command failed to parse.
-def _mask_quotes(text: str) -> str:
-    out = []
-    in_single = False
-    in_double = False
-    escape = False
-    for ch in text:
-        if escape:
-            out.append(" ")
-            escape = False
-            continue
-        if ch == "\\" and not in_single:
-            escape = True
-            continue
-        if ch == "'" and not in_double:
-            in_single = not in_single
-            out.append(" ")
-            continue
-        if ch == '"' and not in_single:
-            in_double = not in_double
-            out.append(" ")
-            continue
-        if in_single or in_double:
-            out.append(" ")
-            continue
-        out.append(ch)
-    return "".join(out)
+# --- B8 (pa-e38.1): genuine-parse-failure fallback, narrowed but conservative ----------------
+# `main()`'s ParseFailure handler used to deny on a bare `BD_TOKEN_RE.search(command)`: a `bd`
+# mention ANYWHERE, including quoted prose or a heredoc body that is pure data. The fallback now
+# allows a `bd` mention that sits only in quoted text or a DATA heredoc body, but it masks
+# nothing unless `_ShellScan` modelled the whole command (round 2, review pa-e38.1-review-1
+# B1/B2): any construct the scanner does not model exactly (`$'...'`, `$"..."`, a backtick or a
+# non-simple `${...}` inside double quotes, arithmetic `((`, a `case` inside a quoted `$( )`, an
+# unbalanced quote, ...) or any word that can execute a quoted string or a heredoc body (a
+# shell, `eval`, `source`, `xargs`, an interpreter, ...) sends the fallback back to
+# deny-on-any-`bd`. A heredoc body is data only when it is terminated and, for an unquoted
+# marker, contains no `$( )`/backtick expansion; even then a `bd` in command position on one of
+# its lines denies.
 
 
-def _data_fed_body_has_bd_command_line(body_lines) -> bool:
-    """Same m2 per-line first-token check `tokenize_segments` already applies to a data-fed
-    heredoc body it cannot shlex-parse: a line whose first token's basename is `bd` is a command
-    line, not prose — denied even though it is "inside a heredoc body"."""
-    for line in body_lines:
-        stripped_line = line.strip()
-        if not stripped_line:
-            continue
-        first_tok = stripped_line.split()[0]
-        if os.path.basename(first_tok) == "bd":
+def _crude_dequote(text: str) -> str:
+    """Drop line continuations, quote characters, and backslashes, so `b''d` / `b\\<nl>d` /
+    `"b"d` read as `bd`. Used only to WIDEN the `bd`-mention test (fail closed)."""
+    return re.sub(r"[\"'\\]", "", re.sub(r"\\\n", "", text))
+
+
+def _mentions_bd(text: str) -> bool:
+    return bool(BD_TOKEN_RE.search(text) or BD_TOKEN_RE.search(_crude_dequote(text)))
+
+
+# Words that can run a quoted string, a piped-in stream, or a heredoc body as code. In the
+# parse-failure fallback, the presence of any of these (outside quotes) makes every quoted span
+# and heredoc body potentially executable, so nothing is masked.
+_FALLBACK_EXECUTORS = {
+    "bash", "sh", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "eval", "source", "exec",
+    "xargs", "env", "sudo", "su", "ssh", "watch", "parallel", "find", "flock", "script",
+    "perl", "ruby", "node", "nodejs", "php", "lua", "tclsh", "osascript", "irb",
+    "awk", "gawk", "mawk", "nawk", "sed",
+}
+_PYTHON_RE = re.compile(r"^python[0-9.]*$")
+_DOT_SOURCE_RE = re.compile(r"(?:^|[;&|(){}\n])\s*\.\s")
+_VIS_WORD_SPLIT_RE = re.compile(r"[\s;&|()<>{}`=!,'\"]+")
+# Commands that only READ a heredoc as data. In the fallback, a heredoc body is data only when
+# every command word on its `<<` line is one of these (plus shell keywords that close a
+# construct); any other consumer (`./run`, `$SHELL`, a function) may execute it.
+_DATA_CONSUMERS = {
+    "cat", "tee", "git", "gh", "jq", "yq", "grep", "egrep", "fgrep", "rg", "wc", "sort",
+    "uniq", "head", "tail", "cut", "tr", "column", "fold", "fmt", "nl", "base64", "md5sum",
+    "sha1sum", "sha256sum", "diff", "cmp", "less", "more", "printf", "echo", "true", ":",
+    "read", "mapfile", "readarray", "case", "esac", "done", "fi", "}",
+}
+_BODY_PIECE_SPLIT_RE = re.compile(r"\n|;|&&|\|\||\||&|\$\(|\(|\)|`|\{|\}")
+
+
+class _ShellScan:
+    """Quote-, comment-, and heredoc-aware scan of a command the tokenizer could not parse.
+
+    Produces `visible` (the command text outside comments and heredoc bodies, with every quoted
+    span rendered as its content when that content has no whitespace, so `b''d` reads `bd`, or
+    as the placeholder `Q` when it does, so quoted prose is masked), `heredocs` (one dict per
+    heredoc: body, terminated, quoted marker), `unmodeled` (met a construct this scanner does not
+    model exactly), and `unterminated` (a quote or `$( )` still open at end of text). It never
+    raises. Callers must treat `unmodeled`/`unterminated` as "masking is not trustworthy"."""
+
+    def __init__(self, text: str):
+        self.t = text
+        self.n = len(text)
+        self.i = 0
+        self.unmodeled = False
+        self.unterminated = False
+        self.vis = []
+        self.heredocs = []
+        self.pending = []
+        self._scan_cmd(nested=False)
+        self.visible = "".join(self.vis)
+
+    def _last_vis_char(self):
+        for chunk in reversed(self.vis):
+            if chunk:
+                return chunk[-1]
+        return ""
+
+    def _at_word_start(self):
+        last = self._last_vis_char()
+        return last == "" or last in " \t\n;&|()<>"
+
+    def _emit_quoted(self, content):
+        if not content:
+            return
+        if any(ch.isspace() for ch in content):
+            self.vis.append("Q")
+        else:
+            self.vis.append(content)
+
+    def _scan_cmd(self, nested):
+        t, n = self.t, self.n
+        depth = 0
+        while self.i < n:
+            c = t[self.i]
+            nxt = t[self.i + 1] if self.i + 1 < n else ""
+            if c == "\\":
+                if nxt == "\n":
+                    self.i += 2  # line continuation: joins the two lines
+                    continue
+                self.vis.append(nxt if nxt else "\\")
+                self.i += 2 if nxt else 1
+                continue
+            if c == "$" and nxt in ("'", '"'):
+                self.unmodeled = True  # ANSI-C / locale quoting: not modelled (B1)
+                self.vis.append("$")
+                self.i += 1
+                continue
+            if c == "'":
+                self._scan_single()
+                continue
+            if c == '"':
+                self._scan_double()
+                continue
+            if c == "`":
+                # Backtick substitution: bash's quote handling inside it is not modelled.
+                self.unmodeled = True
+            if c == "#" and self._at_word_start():
+                while self.i < n and t[self.i] != "\n":
+                    self.i += 1
+                continue
+            if c == "<" and t.startswith("<<", self.i):
+                if t.startswith("<<<", self.i):
+                    self.vis.append("<<<")
+                    self.i += 3
+                    continue
+                self._scan_heredoc_op()
+                continue
+            if c == "\n":
+                self.vis.append("\n")
+                self.i += 1
+                if self.pending:
+                    self._read_heredoc_bodies()
+                continue
+            if c == "(":
+                if nxt == "(":
+                    self.unmodeled = True  # arithmetic `((`/`$((`: `<<` there is a shift
+                depth += 1
+            elif c == ")" and self.pending:
+                # `$(cat <<EOF)` closes before the body line: bash reads no body there, so the
+                # following lines run as commands. Not modelled.
+                self.unmodeled = True
+            if c == ")" and nested:
+                if depth == 0:
+                    self.i += 1
+                    return
+                depth -= 1
+            elif (
+                nested
+                and c == "c"
+                and t.startswith("case", self.i)
+                and (self.i + 4 >= n or t[self.i + 4].isspace())
+                and self._at_word_start()
+            ):
+                self.unmodeled = True  # `case` patterns put bare `)` inside a quoted `$( )`
+            self.vis.append(c)
+            self.i += 1
+        if nested:
+            self.unterminated = True
+
+    def _scan_single(self):
+        start = self.i + 1
+        j = self.t.find("'", start)
+        if j == -1:
+            self.unterminated = True
+            self.i = self.n
+            return
+        content = self.t[start:j]
+        if self.pending and "\n" in content:
+            self.unmodeled = True
+        self.i = j + 1
+        self._emit_quoted(content)
+
+    def _scan_double(self):
+        t, n = self.t, self.n
+        self.i += 1
+        buf = []
+        while self.i < n:
+            c = t[self.i]
+            nxt = t[self.i + 1] if self.i + 1 < n else ""
+            if c == "\\":
+                if nxt == "\n":
+                    self.i += 2
+                    continue
+                buf.append(nxt if nxt in '"\\$`' else "\\" + nxt)
+                self.i += 2
+                continue
+            if c == '"':
+                self.i += 1
+                self._emit_quoted("".join(buf))
+                return
+            if c == "`":
+                self.unmodeled = True
+            elif c == "$" and nxt == "(":
+                if t.startswith("$((", self.i):
+                    self.unmodeled = True
+                else:
+                    # A command substitution inside double quotes is CODE, scanned in command
+                    # context; its text is visible, never masked as quoted prose.
+                    self._emit_quoted("".join(buf))
+                    buf = []
+                    self.vis.append(" ( ")
+                    self.i += 2
+                    self._scan_cmd(nested=True)
+                    self.vis.append(" ) ")
+                    continue
+            elif c == "$" and nxt == "{":
+                m = re.match(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}", t[self.i :])
+                if m:
+                    buf.append(m.group(0))
+                    self.i += len(m.group(0))
+                    continue
+                self.unmodeled = True
+            elif c == "\n" and self.pending:
+                self.unmodeled = True
+            buf.append(c)
+            self.i += 1
+        self.unterminated = True
+
+    def _scan_heredoc_op(self):
+        t, n = self.t, self.n
+        self.i += 2
+        strip_tabs = False
+        if self.i < n and t[self.i] == "-":
+            strip_tabs = True
+            self.i += 1
+        while self.i < n and t[self.i] in " \t":
+            self.i += 1
+        marker = []
+        quoted = False
+        while self.i < n:
+            c = t[self.i]
+            if c in " \t\n;&|()<>":
+                break
+            if c in ("'", '"'):
+                quoted = True
+                j = t.find(c, self.i + 1)
+                if j == -1:
+                    self.unmodeled = True
+                    self.i = n
+                    break
+                part = t[self.i + 1 : j]
+                if "$" in part or "\\" in part or "\n" in part:
+                    self.unmodeled = True
+                marker.append(part)
+                self.i = j + 1
+                continue
+            if c == "\\":
+                quoted = True
+                if self.i + 1 < n:
+                    marker.append(t[self.i + 1])
+                self.i += 2
+                continue
+            if c in "$`":
+                self.unmodeled = True
+            marker.append(c)
+            self.i += 1
+        word = "".join(marker)
+        if not word:
+            self.unmodeled = True
+            return
+        joined = "".join(self.vis)
+        line_start = joined.rfind("\n") + 1
+        self.pending.append((word, strip_tabs, quoted, line_start))
+        self.vis.append(" << ")
+
+    def _read_heredoc_bodies(self):
+        t, n = self.t, self.n
+        joined = "".join(self.vis)
+        for word, strip_tabs, quoted, line_start in self.pending:
+            body_lines = []
+            terminated = False
+            while self.i < n:
+                j = t.find("\n", self.i)
+                line = t[self.i :] if j == -1 else t[self.i : j]
+                self.i = n if j == -1 else j + 1
+                test = line.lstrip("\t") if strip_tabs else line
+                if test == word:
+                    terminated = True
+                    break
+                if not quoted and line.endswith("\\"):
+                    # An unquoted-marker body joins `\<newline>` lines before matching the
+                    # terminator; not modelled here.
+                    self.unmodeled = True
+                body_lines.append(line)
+            self.heredocs.append(
+                {
+                    "body": "\n".join(body_lines),
+                    "terminated": terminated,
+                    "quoted": quoted,
+                    "line": joined[line_start:],
+                }
+            )
+        self.pending = []
+
+
+def _body_has_bd_command_piece(body: str) -> bool:
+    """A data heredoc body line is prose unless one of its command pieces (split on `;`, `&&`,
+    `||`, `|`, `&`, `$(`, parens, braces, backticks) starts, after the usual env/assignment/
+    wrapper prefixes, with a token whose basename is `bd` (quotes and backslashes dropped)."""
+    for piece in _BODY_PIECE_SPLIT_RE.split(body):
+        toks = [re.sub(r"[\"'\\]", "", tok) for tok in piece.split()]
+        toks = [tok for tok in toks if tok]
+        if toks and _find_bd_invocation(toks) is not None:
             return True
     return False
 
 
-def _bd_outside_quotes_and_heredocs(command: str) -> bool:
-    lines = command.split("\n")
-    visible_lines = []
-    shell_fed_bodies = []
-    i = 0
-    n = len(lines)
-    while i < n:
-        line = lines[i]
-        m = _HEREDOC_START_RE.search(line)
-        visible_lines.append(line)
-        i += 1
-        if not m:
+def _piece_command_words(text: str):
+    """The command word of each piece of `text` (split as in `_body_has_bd_command_piece`),
+    after the usual env/assignment/wrapper/keyword prefixes."""
+    words = []
+    for piece in _BODY_PIECE_SPLIT_RE.split(text):
+        toks = piece.split()
+        if not toks:
             continue
-        marker = m.group(2)
-        strip_tabs = "<<-" in line
-        consumer = _heredoc_consumer_name(line[: m.start()])
-        is_shell_fed = consumer is not None and (
-            consumer in _SHELL_C_NAMES or consumer in _HEREDOC_SHELL_FED_EXTRA
-        )
-        body_lines = []
-        while i < n:
-            candidate = lines[i]
-            test = candidate.lstrip("\t") if strip_tabs else candidate
-            if test == marker:
-                visible_lines.append(candidate)
-                i += 1
-                break
-            body_lines.append(candidate)
-            i += 1
-        if not body_lines:
-            continue
-        if is_shell_fed:
-            shell_fed_bodies.append("\n".join(body_lines))
-        elif _data_fed_body_has_bd_command_line(body_lines):
-            return True
-        # A data-fed body with no `bd`-command-position line is prose — omitted from
-        # `visible_lines` entirely, same "default to data-fed" rule `_extract_heredocs` documents.
-    if BD_TOKEN_RE.search(_mask_quotes("\n".join(visible_lines))):
+        k = _advance_past_prefixes(toks)
+        if k < len(toks):
+            words.append(toks[k])
+    return words
+
+
+def _parse_failure_should_deny(command: str) -> bool:
+    """The genuine-ParseFailure verdict. Deny unless every `bd` mention is provably inside
+    quoted text or a data heredoc body, per `_ShellScan`."""
+    if not _mentions_bd(command):
+        return False
+    sc = _ShellScan(command)
+    if sc.unmodeled or sc.unterminated or sc.pending:
         return True
-    return any(BD_TOKEN_RE.search(body) for body in shell_fed_bodies)
+    words = {os.path.basename(w) for w in _VIS_WORD_SPLIT_RE.split(sc.visible) if w}
+    if words & _FALLBACK_EXECUTORS or any(_PYTHON_RE.match(w) for w in words):
+        return True
+    if _DOT_SOURCE_RE.search(sc.visible):
+        return True
+    for cmd in _piece_command_words(sc.visible):
+        if "$" in cmd:
+            return True  # `$SHELL <<EOF`, `$P close x`: an unknown command word
+    for h in sc.heredocs:
+        body = h["body"]
+        expands = not h["quoted"] and ("$(" in body or "`" in body)
+        consumers_ok = all(
+            os.path.basename(cmd) in _DATA_CONSUMERS for cmd in _piece_command_words(h["line"])
+        )
+        if not h["terminated"] or expands or not consumers_ok:
+            if _mentions_bd(body):
+                return True
+            continue
+        if _body_has_bd_command_piece(body):
+            return True
+    return _mentions_bd(sc.visible)
 
 
 # --- heredoc extraction -------------------------------------------------------------------
@@ -238,14 +495,45 @@ def _heredoc_consumer_name(prefix_text):
     return os.path.basename(toks[i])
 
 
+# Round 2 (review pa-e38.1-review-1 B2): interpreters whose stdin/heredoc body is code in a
+# language this guard does not parse. A `bd` mention anywhere in such a body denies.
+_HEREDOC_INTERPRETERS = {"perl", "ruby", "node", "nodejs", "php", "lua", "tclsh", "osascript", "irb"}
+_LINE_WORD_SPLIT_RE = re.compile(r"[\s;&|()<>{}`'\"]+")
+
+
+def _is_interpreter_name(name):
+    return name in _HEREDOC_INTERPRETERS or bool(_PYTHON_RE.match(name))
+
+
+def _heredoc_kind(line, m):
+    """Classify the heredoc started by match `m` on `line`: "shell" (the body runs as shell
+    code), "interp" (the body runs as another language's code), or "data". The consumer is the
+    command on the `<<` line (`_heredoc_consumer_name`); round 2 also scans the REST of the line
+    after the marker, so `cat <<EOF | sh` / `cat <<EOF | tee f | bash` / `cat <<EOF > f && bash f`
+    are shell-fed, not data."""
+    consumer = _heredoc_consumer_name(line[: m.start()])
+    rest_words = {
+        os.path.basename(w) for w in _LINE_WORD_SPLIT_RE.split(line[m.end() :]) if w
+    }
+    shellish = _SHELL_C_NAMES | _HEREDOC_SHELL_FED_EXTRA
+    if (consumer is not None and consumer in shellish) or rest_words & shellish:
+        return "shell"
+    if (consumer is not None and _is_interpreter_name(consumer)) or any(
+        _is_interpreter_name(w) for w in rest_words
+    ):
+        return "interp"
+    return "data"
+
+
 def _extract_heredocs(command: str):
-    """Return (command_with_heredocs_stripped, [(is_shell_fed, heredoc_body_text), ...]).
+    """Return (command_with_heredocs_stripped, [(kind, heredoc_body_text), ...]), `kind` per
+    `_heredoc_kind` ("shell" / "interp" / "data").
 
     Best-effort: handles one or more `<<WORD` / `<<-WORD` / `<<'WORD'` / `<<"WORD"` heredocs in
     document order. Not a full shell grammar (nested heredocs inside quotes are not special-
     cased), but sufficient for the decision table's heredoc row and any straightforward variant.
 
-    `is_shell_fed` (N4, review pa-s2s.8-review-2): True when the heredoc's CONSUMER (the command
+    `kind == "shell"` (N4, review pa-s2s.8-review-2): the heredoc's CONSUMER (the command
     on its `<<` line) is a shell/evaluator (`bash`/`sh`/`zsh`/`dash`/`ksh`, `eval`, `source`, `.`)
     that executes the body as a command, not data. `tokenize_segments` uses this to decide
     whether a body `shlex` cannot parse fails the command closed (shell-fed) or degrades to a
@@ -266,10 +554,7 @@ def _extract_heredocs(command: str):
             continue
         marker = m.group(2)
         strip_tabs = "<<-" in line
-        consumer = _heredoc_consumer_name(line[: m.start()])
-        is_shell_fed = consumer is not None and (
-            consumer in _SHELL_C_NAMES or consumer in _HEREDOC_SHELL_FED_EXTRA
-        )
+        kind = _heredoc_kind(line, m)
         out_lines.append(line)
         i += 1
         body_lines = []
@@ -284,7 +569,7 @@ def _extract_heredocs(command: str):
             body_lines.append(candidate)
             i += 1
         if body_lines:
-            bodies.append((is_shell_fed, "\n".join(body_lines)))
+            bodies.append((kind, "\n".join(body_lines)))
         if not terminator_found:
             # Unterminated heredoc: not a recognizable shape. Treat as a parse failure by
             # signalling via a sentinel the caller checks for.
@@ -400,7 +685,17 @@ def _repair_glued_tokens(tokens):
             out.append(tok[:-1])
             out.append("$")
             continue
-        if len(tok) > 1 and tok not in _OPERATORS and _PUNCT_ONLY_RE.match(tok):
+        if (
+            len(tok) > 1
+            and tok not in _OPERATORS
+            and _PUNCT_ONLY_RE.match(tok)
+            and "<(" not in tok
+            and ">(" not in tok
+        ):
+            # Round 2: a process substitution `<(`/`>(` stays glued, so it still raises
+            # ParseFailure at its `)` exactly as on main and reaches the conservative fallback.
+            # Repairing it would let `source <(echo "bd close x")` / `bash <(...)` split into
+            # harmless-looking segments (probe P14/P15).
             out.extend(_resplit_punct_run(tok))
             continue
         out.append(tok)
@@ -479,17 +774,29 @@ def _collect_paren_group(tokens, i):
 def tokenize_segments(command: str):
     """command string -> list of segments (each a list of word tokens). Raises ParseFailure on
     anything this tokenizer cannot handle."""
+    if "$'" in command:
+        # Round 2 (review pa-e38.1-review-1 B1): shlex does not model ANSI-C `$'...'` quoting
+        # (`$'it\'s'` ends at a different quote than bash's), so it can see a live `bd` as
+        # quoted text. Textual and deliberately over-broad (`'cost $' 'x'` also trips it):
+        # the fallback then judges the command, conservatively.
+        raise ParseFailure("ANSI-C $'...' quoting is not modelled")
     stripped, heredoc_bodies = _extract_heredocs(command)
     stripped, backtick_bodies = _extract_backticks(stripped)
     normalized = _normalize_newlines(stripped)
     tokens = _shlex_tokens(normalized)
     segments = _split_segments(tokens)
-    for is_shell_fed, body in heredoc_bodies:
+    for kind, body in heredoc_bodies:
+        if kind == "interp":
+            # Round 2 (review pa-e38.1-review-1 B2): a body fed to an interpreter is code this
+            # guard cannot parse; a `bd` mention anywhere in it fails closed.
+            if _mentions_bd(body):
+                segments.append([_DENY_SENTINEL, "exec-heredoc"])
+            continue
         body_norm = _normalize_newlines(body)
         try:
             segments.extend(_split_segments(_shlex_tokens(body_norm)))
         except ParseFailure:
-            if is_shell_fed:
+            if kind == "shell":
                 # N4 (review pa-s2s.8-review-2): a heredoc fed to a shell/evaluator (`bash`,
                 # `sh`, `zsh`, `dash`, `ksh`, `eval`, `source`, `.`) EXECUTES its body as a real
                 # command — a body `shlex` cannot parse is that command's own failure state, the
@@ -736,7 +1043,7 @@ def _skip_global_flags(args):
     return i
 
 
-def _recursive_bd_deny(text, cwd, depth):
+def _recursive_bd_deny(text, cwd, depth, outer_assigns=None, outer_command=""):
     """F3: does executing `text` as a nested shell command invoke a `bd` verb the guard would
     deny? Recurses through the same tokenizer/judge path (same `cwd`, so `bd show`/scratch-init
     checks inside the nested string still see the real hook payload's cwd). Returns a
@@ -748,9 +1055,18 @@ def _recursive_bd_deny(text, cwd, depth):
         segments = tokenize_segments(text)
     except ParseFailure:
         return "parse-failure" if BD_TOKEN_RE.search(text) else None
-    assigns = _collect_assigns_from_text(text)
+    # Round 2: the nested string runs in the SAME command, so the outer command's assignments
+    # apply (`P=$(printf bd); eval "$P close x"`, `P=bd; eval "$P close x"`); a name poisoned on
+    # either side stays poisoned. The `bd`-mention test sees the whole outer command.
+    assigns = dict(outer_assigns or {})
+    for name, value in _collect_assigns_from_text(text).items():
+        if assigns.get(name) is not _POISONED:
+            assigns[name] = value
+    mention_text = outer_command or text
     for seg in segments:
-        verdict = judge_segment(seg, cwd, depth=depth + 1, original_command=text, assigns=assigns)
+        verdict = judge_segment(
+            seg, cwd, depth=depth + 1, original_command=mention_text, assigns=assigns
+        )
         if verdict is not None:
             return verdict
     return None
@@ -760,18 +1076,24 @@ def _recursive_bd_deny(text, cwd, depth):
 # design §12.1: a command-position `$VAR`/`${VAR}` is recognized as invoking `bd` ONLY when a
 # `VAR=<literal>` assignment elsewhere in the SAME command text resolves it to a token whose
 # basename is `bd`. A `$( )`/backtick command substitution is never resolved this way (its value
-# cannot be known without running it) — command-position indirection the table cannot resolve is
-# allowed, matching "never blocks unrelated shell calls".
+# cannot be known without running it). Round 2 (pa-e38.1 B3): such an unresolvable command word
+# denies when the command mentions `bd` (see the end of `judge_segment`); only an unbound
+# variable's indirection stays allowed.
 _ASSIGN_LITERAL_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=([A-Za-z0-9_./:-]*)$")
 _VAR_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
+_ASSIGN_ANY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.DOTALL)
+# Any `$NAME` / `${NAME...}` reference, including operator forms (`${Q:-bd}`, `${P%x}`).
+_VAR_NAME_REF_RE = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)")
+# Marks a variable assigned in this command from a command substitution or another expansion.
+_POISONED = object()
 
 
 def _collect_assigns_from_text(text):
     """Best-effort `{name: literal_value}` table of every `VAR=<literal>` word appearing anywhere
-    in `text` (only a LITERAL right-hand side enters the table — one with no `$`, backtick, or
-    `$( )` of its own, so `B=$(printf ...)` can never poison it with an unresolved value). Never
-    raises: any tokenizing failure here just yields an empty table, which only means an
-    indirection stays unresolved (allowed), never a false deny.
+    in `text` (only a LITERAL right-hand side enters the table as a value). A name assigned from
+    `$( )`, a backtick, or another `$` expansion maps to `_POISONED` instead (round 2, B3), so a
+    command-position use of it is known to be unresolvable. Never raises: any tokenizing failure
+    here just yields an empty table.
 
     Includes SHELL-FED heredoc bodies (`bash <<EOF\\nB=bd\\n$B close x\\nEOF`) — that body
     executes as command text just as much as the rest of the command line, so an assignment
@@ -788,18 +1110,30 @@ def _collect_assigns_from_text(text):
         all_tokens.extend(_shlex_tokens(normalized))
     except ParseFailure:
         pass
-    for is_shell_fed, body in heredoc_bodies:
-        if not is_shell_fed:
+    for kind, body in heredoc_bodies:
+        if kind != "shell":
             continue
         try:
             all_tokens.extend(_shlex_tokens(_normalize_newlines(body)))
         except ParseFailure:
             continue
     table = {}
-    for tok in all_tokens:
-        m = _ASSIGN_LITERAL_RE.match(tok)
-        if m:
-            table[m.group(1)] = m.group(2)
+    for k, tok in enumerate(all_tokens):
+        m = _ASSIGN_ANY_RE.match(tok)
+        if not m:
+            continue
+        name, value = m.group(1), m.group(2)
+        nxt = all_tokens[k + 1] if k + 1 < len(all_tokens) else None
+        # Round 2 (review pa-e38.1-review-1 B3): `P=$(...)` reaches here as `P=` followed by the
+        # repaired `$`, `(` tokens (a backtick as the `$(...)` sentinel's `$`), and `X=$P` /
+        # `X=${Q:-bd}` keep their `$`. Such a value is unknowable: mark the name POISONED
+        # (sticky across later literal assignments) instead of recording an empty literal.
+        if (value == "" and nxt in ("$", "$(...)")) or "$" in value or "`" in value:
+            table[name] = _POISONED
+            continue
+        lm = _ASSIGN_LITERAL_RE.match(tok)
+        if lm and table.get(name) is not _POISONED:
+            table[name] = lm.group(2)
     return table
 
 
@@ -816,7 +1150,7 @@ def _resolve_command_position_token(token, assigns):
 
     def _sub(m):
         name = m.group(1) or m.group(2)
-        if name not in assigns:
+        if name not in assigns or assigns[name] is _POISONED:
             missing.append(name)
             return ""
         return assigns[name]
@@ -926,6 +1260,8 @@ def judge_segment(segment, cwd, depth=0, original_command="", assigns=None):
     """Return None (allow) or a deny-reason-key string (see DENY_MESSAGES)."""
     if assigns is None:
         assigns = {}
+    if segment and segment[0] == _DENY_SENTINEL:
+        return segment[1]
     found = _find_bd_invocation(segment)
     if found is not None:
         bd_index, _raw_verb = found
@@ -1015,13 +1351,13 @@ def judge_segment(segment, cwd, depth=0, original_command="", assigns=None):
     # check never reaches since `echo` isn't in `_SHELL_C_NAMES` or `eval`).
     exec_str = _find_shell_exec_string(segment)
     if exec_str is not None:
-        return _recursive_bd_deny(exec_str, cwd, depth)
+        return _recursive_bd_deny(exec_str, cwd, depth, assigns, original_command)
 
     # m3 (review pa-s2s.8-review-1): `env -S '...'`/`--split-string='...'` execs its value as a
     # shell command line, same class as the `bash -c`/`eval` check above.
     env_split = _find_env_split_string(segment)
     if env_split is not None:
-        return _recursive_bd_deny(env_split, cwd, depth)
+        return _recursive_bd_deny(env_split, cwd, depth, assigns, original_command)
 
     # N3 (review pa-s2s.8-review-2, reverting a fix round 1 deviation): a variable/command-
     # substitution/backtick sentinel sits in COMMAND POSITION (`B=bd; $B close x`, `$(command -v
@@ -1030,8 +1366,8 @@ def judge_segment(segment, cwd, depth=0, original_command="", assigns=None):
     # position_token` never resolves) — if that yields a token whose basename is `bd`, judge the
     # REBUILT segment through the SAME verb-dispatch path above, so the deny message names the
     # actual verb (e.g. "Raw bd close is denied...") rather than a separate generic reason. An
-    # indirection that cannot be resolved this way is allowed: this guard never blocks a command
-    # merely because the word `bd` appears somewhere else in the text.
+    # indirection that cannot be resolved this way is allowed when nothing in the command binds
+    # it (`$EDITOR bd-notes.md`, row81) — see the round-2 exception below.
     i = _advance_past_prefixes(segment)
     if i < len(segment) and segment[i].startswith("$"):
         resolved = _resolve_command_position_token(segment[i], assigns)
@@ -1041,7 +1377,29 @@ def judge_segment(segment, cwd, depth=0, original_command="", assigns=None):
                 rebuilt, cwd, depth=depth, original_command=original_command, assigns=assigns
             )
 
+    # Round 2 (review pa-e38.1-review-1 B3; brief: fail-closed rows win over N3): a command word
+    # whose basename comes from a command substitution (the `$(...)`/backtick sentinel) or from
+    # a variable this same command assigns from a substitution or another expansion
+    # (`P=$(printf bd); $P close x`, `P="$(command -v bd)"; "$P" close x`) cannot be resolved
+    # and may well be `bd`. Deny when the command mentions `bd` anywhere. A command word whose
+    # basename is literal (`"$ROOT/scripts/x.sh"`) can never be `bd` and stays allowed; an
+    # unbound variable (`$EDITOR`) keeps N3's allow.
+    if i < len(segment) and _command_word_tainted(segment[i], assigns):
+        if _mentions_bd(original_command or " ".join(segment)):
+            return "unresolved-indirection"
+
     return None
+
+
+def _command_word_tainted(token, assigns):
+    if token == "$(...)":
+        return True
+    base = os.path.basename(token)
+    if "$" not in base:
+        return False
+    return any(
+        assigns.get(name) is _POISONED for name in _VAR_NAME_REF_RE.findall(base)
+    )
 
 
 def judge_command(command, cwd):
@@ -1087,7 +1445,7 @@ def main():
         try:
             verdict = judge_command(command, cwd)
         except ParseFailure:
-            if _bd_outside_quotes_and_heredocs(command):
+            if _parse_failure_should_deny(command):
                 emit_deny("parse-failure")
                 return 0
             return 0
