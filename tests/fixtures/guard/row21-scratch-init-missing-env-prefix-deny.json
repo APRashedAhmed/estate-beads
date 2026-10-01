@@ -8,5 +8,5 @@
   },
   "cwd": "__NONGIT_CWD__",
   "expected": "deny",
-  "reason_contains": "scratch form"
+  "reason_contains": "bead-scratch.sh"
 }

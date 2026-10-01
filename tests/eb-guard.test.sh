@@ -20,9 +20,11 @@ source "$ROOT/tests/_scratch_db.sh"
 
 GENERIC_CWD="$(mktemp -d)"
 NONGIT_CWD="$(mktemp -d)"
-# row20 needs a cwd that IS a git repo. The plugin ROOT itself may or may not be one (it isn't
-# when this suite runs from an installed, non-git cache copy), so mint a throwaway repo instead
-# of relying on the ambient root's git-repo-ness.
+# row20/row19 cover a cwd that IS and ISN'T a git repo respectively — both now deny (pa-e38.8: the
+# guard's old cwd-outside-git-repo scratch allow is gone; `bd init` is denied unconditionally,
+# naming scripts/bead-scratch.sh). Kept as two fixtures to prove cwd no longer affects the verdict
+# either way. GIT_CWD is a throwaway repo, not the plugin ROOT itself (which may or may not be one
+# when this suite runs from an installed, non-git cache copy).
 GIT_CWD="$(mktemp -d)"
 git init -q "$GIT_CWD"
 

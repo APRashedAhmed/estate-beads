@@ -1,5 +1,5 @@
 {
-  "id": "row19-scratch-init-allow",
+  "id": "row19-scratch-init-nongit-cwd-deny",
   "session_id": "guard-test",
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
@@ -7,6 +7,6 @@
     "command": "env -u BEADS_DIR bd init --skip-hooks --skip-agents --non-interactive --prefix t"
   },
   "cwd": "__NONGIT_CWD__",
-  "expected": "allow",
-  "reason_contains": ""
+  "expected": "deny",
+  "reason_contains": "bead-scratch.sh"
 }
