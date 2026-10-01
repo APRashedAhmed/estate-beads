@@ -1,0 +1,12 @@
+{
+  "id": "row111-b3-literal-var-command-position-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "P=bd; $P close x"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "Raw bd close is denied"
+}

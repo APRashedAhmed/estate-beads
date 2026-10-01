@@ -1,0 +1,12 @@
+{
+  "id": "row103-b2-unknown-consumer-heredoc-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "case x in a) ;; esac; ./run <<'EOF'\nB=bd; $B close x\nEOF"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "could not be parsed"
+}

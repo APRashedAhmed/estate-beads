@@ -1,0 +1,12 @@
+{
+  "id": "row113-b3-subst-assign-then-claim-allow",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "P=$(bd show --json pa-x | jq -r .[0].id); bd update \"$P\" --claim"
+  },
+  "cwd": "__CWD__",
+  "expected": "allow",
+  "reason_contains": ""
+}

@@ -1,0 +1,12 @@
+{
+  "id": "row118-b8-parse-failure-heredoc-prose-allow",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "case \"$x\" in a) echo hi;; esac\ncat <<'EOF' >out.txt\nThe tracker CLI is bd.\nEOF"
+  },
+  "cwd": "__CWD__",
+  "expected": "allow",
+  "reason_contains": ""
+}

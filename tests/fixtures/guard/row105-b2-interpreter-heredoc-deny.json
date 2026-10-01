@@ -1,0 +1,12 @@
+{
+  "id": "row105-b2-interpreter-heredoc-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "python3 <<EOF\nimport os; os.system('bd close x')\nEOF"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "interpreter"
+}

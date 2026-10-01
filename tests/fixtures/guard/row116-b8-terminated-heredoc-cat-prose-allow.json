@@ -1,10 +1,10 @@
 {
-  "id": "row92-parse-failure-quoted-bd-allow",
+  "id": "row116-b8-terminated-heredoc-cat-prose-allow",
   "session_id": "guard-test",
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
-    "command": "echo 'about bd usage' \"unterminated"
+    "command": "cat <<EOF >out.txt\nThe tracker CLI is bd.\nEOF"
   },
   "cwd": "__CWD__",
   "expected": "allow",

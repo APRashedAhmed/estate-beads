@@ -1,0 +1,12 @@
+{
+  "id": "row101-b2-unterminated-heredoc-to-file-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "cat <<EOF > f.sh\necho hi; bd close x"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "could not be parsed"
+}

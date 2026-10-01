@@ -1,0 +1,12 @@
+{
+  "id": "row120-fb-comment-quote-does-not-mask-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "case x in a) ;; esac\n# don't\nbd close x"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "could not be parsed"
+}

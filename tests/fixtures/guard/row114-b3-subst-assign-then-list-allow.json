@@ -1,10 +1,10 @@
 {
-  "id": "row93-parse-failure-heredoc-body-bd-allow",
+  "id": "row114-b3-subst-assign-then-list-allow",
   "session_id": "guard-test",
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
-    "command": "cat <<EOF >/tmp/x\nThe tracker CLI is bd.\nEOX"
+    "command": "X=$(date); bd list"
   },
   "cwd": "__CWD__",
   "expected": "allow",

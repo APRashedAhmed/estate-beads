@@ -1,0 +1,12 @@
+{
+  "id": "row117-b8-parse-failure-quoted-prose-allow",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "case \"$x\" in a) echo 'about bd usage';; esac"
+  },
+  "cwd": "__CWD__",
+  "expected": "allow",
+  "reason_contains": ""
+}

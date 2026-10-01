@@ -1,0 +1,12 @@
+{
+  "id": "row112-b3-subst-assign-then-close-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "X=$(bd list); bd close x"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "Raw bd close is denied"
+}

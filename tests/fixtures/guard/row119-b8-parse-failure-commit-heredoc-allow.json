@@ -1,0 +1,12 @@
+{
+  "id": "row119-b8-parse-failure-commit-heredoc-allow",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "case x in a) ;; esac; git commit -m \"$(cat <<'EOF'\nfix bd thing\nEOF\n)\""
+  },
+  "cwd": "__CWD__",
+  "expected": "allow",
+  "reason_contains": ""
+}

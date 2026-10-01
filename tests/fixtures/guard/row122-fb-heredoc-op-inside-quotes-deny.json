@@ -1,0 +1,12 @@
+{
+  "id": "row122-fb-heredoc-op-inside-quotes-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "echo \"x <<EOF\"\necho hi; bd close x\nEOF\ncase x in a) ;; esac"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "could not be parsed"
+}

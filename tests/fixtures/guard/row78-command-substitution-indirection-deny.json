@@ -1,5 +1,5 @@
 {
-  "id": "row78-command-substitution-indirection-allow",
+  "id": "row78-command-substitution-indirection-deny",
   "session_id": "guard-test",
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
@@ -7,5 +7,6 @@
     "command": "$(command -v bd) close pa-x"
   },
   "cwd": "__CWD__",
-  "expected": "allow"
+  "expected": "deny",
+  "reason_contains": "cannot resolve"
 }

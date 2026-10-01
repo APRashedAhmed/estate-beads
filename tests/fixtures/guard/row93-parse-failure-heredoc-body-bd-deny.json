@@ -1,0 +1,12 @@
+{
+  "id": "row93-parse-failure-heredoc-body-bd-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "cat <<EOF >/tmp/x\nThe tracker CLI is bd.\nEOX"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "could not be parsed"
+}

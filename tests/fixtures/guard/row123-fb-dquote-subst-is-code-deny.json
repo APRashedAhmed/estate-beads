@@ -1,0 +1,12 @@
+{
+  "id": "row123-fb-dquote-subst-is-code-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "case x in a) ;; esac; echo \"$(bd close x)\""
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "could not be parsed"
+}
