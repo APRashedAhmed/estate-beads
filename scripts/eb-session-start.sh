@@ -38,6 +38,15 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "$SESSION_ID" ]; then
   printf 'export BEADS_ACTOR=%q\n' "$SESSION_ID" >> "$CLAUDE_ENV_FILE"
 fi
 
+# --- 1b. scratch sweep: delete bead-scratch.sh folders whose marker is >24h old -----------------
+# Filesystem-only (glob + stat, no `bd` call), runs regardless of whether BEADS_DIR resolves below
+# — scratch cleanup is not conditioned on this session having a live Beads database. Never fails
+# the hook: guarded (`-x` + `|| true`) so a missing script or non-zero exit never blocks prime.
+SCRATCH_SCRIPT="$HERE/bead-scratch.sh"
+if [ -x "$SCRATCH_SCRIPT" ]; then
+  "$SCRATCH_SCRIPT" sweep-stale "${EB_SCRATCH_SWEEP_STALE_HOURS:-24}" >/dev/null 2>&1 || true
+fi
+
 # --- 2. prime + advisory sweep, only if BEADS_DIR resolves -------------------------------------
 if [ -z "${BEADS_DIR:-}" ] || [ ! -d "$BEADS_DIR" ]; then
   exit 0

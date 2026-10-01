@@ -21,6 +21,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 RELEASE_SCRIPT="$HERE/bead-release.sh"
+SCRATCH_SCRIPT="$HERE/bead-scratch.sh"
 # Total budget target, measured from THIS script's own start (not just phase 2) — leaves a margin
 # under Claude's shared ~1.5s SessionEnd budget for the synchronous `bd list` + batched release
 # calls in phase 1, whose cost varies with match count and db size.
@@ -39,6 +40,13 @@ except Exception:
 ' 2>/dev/null)"
 
 [ -n "$SESSION_ID" ] || exit 0
+
+# --- scratch cleanup: delete THIS session's own marked bead-scratch.sh folders ------------------
+# Filesystem-only (glob + stat, no `bd` call) — negligible against the shared SessionEnd budget.
+# Never fails the hook: bead-scratch.sh's own sweep-session is itself silent/no-fail, and this is
+# additionally guarded here so a missing script or a non-zero exit never blocks claim release.
+[ -x "$SCRATCH_SCRIPT" ] && "$SCRATCH_SCRIPT" sweep-session "$SESSION_ID" >/dev/null 2>&1
+
 [ -n "${BEADS_DIR:-}" ] && [ -d "${BEADS_DIR:-}" ] || exit 0
 
 LIST_JSON="$(bd list --status in_progress --json 2>/dev/null)"
