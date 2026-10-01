@@ -21,6 +21,14 @@ ok(){ if eval "$2"; then printf '  ok  %s\n' "$1"; pass=$((pass+1)); else printf
 
 FIXTMP="$(mktemp -d)"; trap 'rm -rf "$FIXTMP"' EXIT
 
+# Hermetic by default: point EB_PLUGINS_JSON at an empty fixture registry so every case in this
+# file resolves the installed-registry tier against a throwaway file, never the operator's real
+# ~/.claude/plugins/installed_plugins.json (review pa-e38.3-review-1 MINOR). Cases that need a
+# different registry value (e.g. unset, to exercise a later fallback tier) override per call.
+EMPTY_REGISTRY="$FIXTMP/empty-installed-registry.json"
+printf '{"plugins": {}}\n' > "$EMPTY_REGISTRY"
+export EB_PLUGINS_JSON="$EMPTY_REGISTRY"
+
 fixture() {  # <command-string> -> a PreToolUse stdin JSON fixture on stdout
   printf '{"session_id":"shim-test","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"%s"},"transcript_path":null}' "$ROOT" "$1"
 }
@@ -111,13 +119,12 @@ mkdir -p "$FOREIGN_ROOT/.claude-plugin"
 printf '{"name":"some-other-plugin","description":"x","author":{"name":"t"}}\n' > "$FOREIGN_ROOT/.claude-plugin/plugin.json"
 # SEAT_ROOT/EB_WORKSPACE_SIBLING unset here on purpose: they open a later, legitimate tier
 # (design §12.4, the dev-checkout fallback) that this assertion is not testing — it isolates
-# ambient-root rejection down to the last-resort tier. EB_PLUGINS_JSON is pointed at an empty
-# fixture registry (rather than unset) so this stays hermetic: unset falls through to the
-# real ~/.claude/plugins/installed_plugins.json, which legitimately resolves this very
-# checkout via the installed-registry tier (design §12.4) and stops the chain before
-# script-relative — not a bug in eb_root.py, just a non-hermetic test fixture (B4/F2).
-EMPTY_REGISTRY="$FIXTMP/empty-installed-registry.json"
-printf '{"plugins": {}}\n' > "$EMPTY_REGISTRY"
+# ambient-root rejection down to the last-resort tier. EB_PLUGINS_JSON is already exported above
+# (pointed at the empty fixture registry rather than unset) so this stays hermetic: unset would
+# fall through to the real ~/.claude/plugins/installed_plugins.json, which legitimately resolves
+# this very checkout via the installed-registry tier (design §12.4) and stops the chain before
+# script-relative — not a bug in eb_root.py, just a non-hermetic test fixture (B4/F2). Named
+# explicitly here anyway (redundant with the export, harmless) to keep the case self-describing.
 PY_ROOT_FOREIGN="$(env -u SEAT_ROOT -u EB_WORKSPACE_SIBLING CLAUDE_PLUGIN_ROOT="$FOREIGN_ROOT" EB_PLUGINS_JSON="$EMPTY_REGISTRY" python3 "$ROOT/lib/eb_root.py" --source plugin)"
 SH_ROOT_FOREIGN="$(env -u SEAT_ROOT -u EB_WORKSPACE_SIBLING CLAUDE_PLUGIN_ROOT="$FOREIGN_ROOT" EB_PLUGINS_JSON="$EMPTY_REGISTRY" bash "$ROOT/bin/eb-root.sh" --source plugin)"
 ok "plugin: a foreign CLAUDE_PLUGIN_ROOT (plugin.json name != $NAME) is rejected -> script-relative" \
