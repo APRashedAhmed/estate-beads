@@ -1,0 +1,12 @@
+{
+  "id": "row96-parse-failure-datafed-piped-shell-command-line-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "cat <<EOF | bash\nbd close pa-x\nEOX"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "could not be parsed"
+}

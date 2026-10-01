@@ -1,0 +1,12 @@
+{
+  "id": "row95-quoted-assign-subshell-denied-verb-deny",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "X=\"$(bd close x)\"; bd show y"
+  },
+  "cwd": "__CWD__",
+  "expected": "deny",
+  "reason_contains": "Raw bd close is denied"
+}

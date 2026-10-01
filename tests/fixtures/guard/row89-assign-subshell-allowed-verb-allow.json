@@ -1,0 +1,12 @@
+{
+  "id": "row89-assign-subshell-allowed-verb-allow",
+  "session_id": "guard-test",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "P=$(bash e plugin); bd show x"
+  },
+  "cwd": "__CWD__",
+  "expected": "allow",
+  "reason_contains": ""
+}
