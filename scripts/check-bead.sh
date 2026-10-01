@@ -79,8 +79,10 @@ if [[ -n "$wu" ]]; then
       "create the manifest, then add:"$'\n'"beads:"$'\n'"  - $id"$'\n'"lifecycle: beads"
   elif ! { grep -qF -- "- $id" "$manifest" \
            || grep -E '^beads:[[:space:]]*\[' "$manifest" \
-              | sed -E 's/^beads:[[:space:]]*\[//' | tr -d ']' | tr ',' '\n' \
+              | sed -E 's/^beads:[[:space:]]*\[//' \
+              | sed -E 's/#.*$//' | tr -d ']' | tr ',' '\n' \
               | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' \
+              | sed -E 's/^["'"'"']//; s/["'"'"']$//' \
               | grep -qxF -- "$id"; }; then
     report "'$manifest' carries no 'beads:' backlink to $id (contract §6.3)" \
       "append to $manifest:"$'\n'"beads:"$'\n'"  - $id"$'\n'"lifecycle: beads"

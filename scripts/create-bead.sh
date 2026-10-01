@@ -177,11 +177,26 @@ if [[ -n "$workunit" ]]; then
   manifest="${expanded_workunit%/}/workunit.yaml"
   [[ -f "$manifest" ]] || die "Bead $id was created, but '$manifest' does not exist so the backlink could not be written. Create the manifest, then run: $SCRIPT_DIR/check-bead.sh --id $id. Do not re-run this script."
   if grep -qE '^beads:[[:space:]]*\[' "$manifest"; then
-    # Flow form: beads: [] or beads: [a, b]. Rebuild the list, skipping a
-    # duplicate id so a re-run never appends it twice.
+    # Flow form: beads: [] or beads: [a, b]. Only a single-line flow list is
+    # safe to rewrite mechanically: the whole list on one line, optionally
+    # followed by a trailing '# comment', and nothing else after the ']'.
+    # Anything else (a multi-line flow list, unrecognized trailing content)
+    # is left byte-identical and reported as a manual edit, per review
+    # pa-e38.5-review-1 MAJOR 1.
+    flow_line="$(grep -E '^beads:[[:space:]]*\[' "$manifest" | head -n1)"
+    if ! printf '%s\n' "$flow_line" | grep -qE '^beads:[[:space:]]*\[[^][]*\][[:space:]]*(#.*)?$'; then
+      die "Bead $id was created, but '$manifest' has a 'beads:' flow list in a form this script cannot safely rewrite (a multi-line flow list, or unrecognized content after the closing ']'). The manifest was left unchanged. Add the backlink by hand: edit '$manifest' so its 'beads:' list includes $id, then run: $SCRIPT_DIR/check-bead.sh --id $id. Do not re-run this script."
+    fi
+    # Rebuild the list, skipping a duplicate id (quoted or bare) so a re-run
+    # never appends it twice, and preserving a trailing '# comment'.
     awk -v id="$id" '
       /^beads:[[:space:]]*\[/ {
         line = $0
+        comment = ""
+        if (match(line, /#.*/)) {
+          comment = substr(line, RSTART, RLENGTH)
+          line = substr(line, 1, RSTART - 1)
+        }
         sub(/^beads:[[:space:]]*\[/, "", line)
         sub(/\][[:space:]]*$/, "", line)
         n = split(line, parts, ",")
@@ -192,7 +207,9 @@ if [[ -n "$workunit" ]]; then
           item = parts[i]
           gsub(/^[[:space:]]+|[[:space:]]+$/, "", item)
           if (item == "") continue
-          if (item == id) found = 1
+          bare = item
+          gsub(/^["'"'"']|["'"'"']$/, "", bare)
+          if (bare == id) found = 1
           if (count > 0) out = out ", "
           out = out item
           count++
@@ -201,7 +218,9 @@ if [[ -n "$workunit" ]]; then
           if (count > 0) out = out ", "
           out = out id
         }
-        print "beads: [" out "]"
+        result = "beads: [" out "]"
+        if (comment != "") result = result " " comment
+        print result
         next
       }
       { print }

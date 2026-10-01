@@ -87,4 +87,53 @@ grep -qF -- "- existing-c" "$scratch/wu-block/workunit.yaml" \
   && eb_ok "block-form existing entries are preserved" \
   || eb_bad "block-form existing entries are preserved"
 
+# --- workunit.yaml backlink: multi-line flow list is rejected, file left unchanged (review-1 MAJOR 1) -
+mkdir -p "$scratch/wu-flow-multiline"
+printf 'slug: flow-multiline\nbeads: [\n  existing-a,\n  existing-b\n]\n' > "$scratch/wu-flow-multiline/workunit.yaml"
+before_ml="$(cat "$scratch/wu-flow-multiline/workunit.yaml")"
+out_ml="$(scripts/create-bead.sh --title "FlowMultiline" --description d --acceptance a --project p --accept evidence --recognized-by x --workunit "$scratch/wu-flow-multiline" 2>&1)"; rc_ml=$?
+assert_rc "create-bead.sh exits non-zero for a multi-line flow 'beads:' list" 1 "$rc_ml"
+printf '%s' "$out_ml" | grep -qE 'cannot safely rewrite|unsupported' \
+  && eb_ok "multi-line flow list error names the file and the manual edit" \
+  || eb_bad "multi-line flow list error names the file and the manual edit" "$out_ml"
+after_ml="$(cat "$scratch/wu-flow-multiline/workunit.yaml")"
+[[ "$before_ml" == "$after_ml" ]] \
+  && eb_ok "multi-line flow list: workunit.yaml left byte-identical" \
+  || eb_bad "multi-line flow list: workunit.yaml left byte-identical"
+
+# --- workunit.yaml backlink: unsupported trailing content after ']' is rejected, file unchanged ----
+mkdir -p "$scratch/wu-flow-trailing"
+printf 'slug: flow-trailing\nbeads: [existing-a] extra\n' > "$scratch/wu-flow-trailing/workunit.yaml"
+before_tr="$(cat "$scratch/wu-flow-trailing/workunit.yaml")"
+out_tr="$(scripts/create-bead.sh --title "FlowTrailing" --description d --acceptance a --project p --accept evidence --recognized-by x --workunit "$scratch/wu-flow-trailing" 2>&1)"; rc_tr=$?
+assert_rc "create-bead.sh exits non-zero for unrecognized trailing content after ']'" 1 "$rc_tr"
+after_tr="$(cat "$scratch/wu-flow-trailing/workunit.yaml")"
+[[ "$before_tr" == "$after_tr" ]] \
+  && eb_ok "unsupported trailing content: workunit.yaml left byte-identical" \
+  || eb_bad "unsupported trailing content: workunit.yaml left byte-identical"
+
+# --- workunit.yaml backlink: a trailing '# comment' is preserved, id still appended (review-1 MAJOR 1 optional) -
+mkdir -p "$scratch/wu-flow-comment"
+printf 'slug: flow-comment\nbeads: [existing-a] # keep me\n' > "$scratch/wu-flow-comment/workunit.yaml"
+commentid="$(scripts/create-bead.sh --title "FlowComment" --description d --acceptance a --project p --accept evidence --recognized-by x --workunit "$scratch/wu-flow-comment")"; rc_c=$?
+assert_rc "create-bead.sh exits 0 for a flow list with a trailing comment" 0 "$rc_c"
+grep -qF "beads: [existing-a, $commentid] # keep me" "$scratch/wu-flow-comment/workunit.yaml" \
+  && eb_ok "trailing '# comment' is preserved and the id is appended before it" \
+  || eb_bad "trailing '# comment' is preserved and the id is appended before it"
+scripts/check-bead.sh --id "$commentid" >/dev/null 2>&1 \
+  && eb_ok "check-bead.sh finds the id in a comment-trailing flow list" \
+  || eb_bad "check-bead.sh finds the id in a comment-trailing flow list"
+
+# --- workunit.yaml backlink: quoted ids are recognized and deduped (review-1 MINOR 1) ---------------
+mkdir -p "$scratch/wu-flow-quoted"
+printf 'slug: flow-quoted\nbeads: ["existing-a", '"'"'existing-b'"'"']\n' > "$scratch/wu-flow-quoted/workunit.yaml"
+quotedid="$(scripts/create-bead.sh --title "FlowQuoted" --description d --acceptance a --project p --accept evidence --recognized-by x --workunit "$scratch/wu-flow-quoted")"; rc_q=$?
+assert_rc "create-bead.sh exits 0 for a flow list with quoted ids" 0 "$rc_q"
+grep -qF "beads: [\"existing-a\", 'existing-b', $quotedid]" "$scratch/wu-flow-quoted/workunit.yaml" \
+  && eb_ok "quoted existing ids are preserved and the new bare id is appended" \
+  || eb_bad "quoted existing ids are preserved and the new bare id is appended"
+scripts/check-bead.sh --id "$quotedid" >/dev/null 2>&1 \
+  && eb_ok "check-bead.sh finds the id in a quoted-id flow list" \
+  || eb_bad "check-bead.sh finds the id in a quoted-id flow list"
+
 eb_report
