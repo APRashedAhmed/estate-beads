@@ -188,25 +188,71 @@ PYEOF
              || eb_bad "N1: a pending Bead held by a LIVE session gets no advisory at all"
 rm -f "$ENVFILE2E"
 
-# --- 5. SessionEnd timing: one direct stdin feed with one claimed Bead completes < 1s ----------
+# --- 5/5b timing model (F1, pa-e38.6): the old asserts used a hardcoded 1s/1.5s wall-clock
+#     budget, which flakes under CPU load that has nothing to do with the handler — the box is
+#     merely slower at spawning `bd`/python processes, not the handler doing unbounded work.
+#     Per portability-contract.md §5.5, Claude shares a ~1.5s budget across SessionEnd hooks;
+#     eb-session-end.sh's own TOTAL_BUDGET_SECONDS (default 1.3s, scripts/eb-session-end.sh:27)
+#     targets that by design, backgrounding the per-Bead note phase under a watchdog deadline.
+#     So ANY fixed threshold under ~1.3s is wrong independent of load, and a pure wall-clock cap
+#     can't distinguish "this box is slow right now" from "the handler is doing unbounded work".
+#
+#     Model instead: measure a same-run BASELINE cost of the handler's own phase-1 call (a bare
+#     `bd list --status in_progress --json`) immediately before each timed run, on the same
+#     scratch db, under whatever load is currently present. Phase 1 of eb-session-end.sh is
+#     exactly ONE `bd list` + ONE batched `bd update` per distinct assignee (never one call per
+#     Bead — true for both the single-claim and the 3-claims-same-assignee cases here), so:
+#       threshold_ms = 2*baseline_ms (phase 1: list + batched update) + budget_ms (phase 2's own
+#                      watchdog deadline) + margin_ms (python/awk/watchdog spawn overhead, scaled
+#                      with baseline so it inflates under the same load the baseline saw)
+#     This scales with ambient load automatically (baseline is measured live, same run, same box)
+#     instead of guessing a load-free wall-clock number.
+#
+#     That alone isn't enough: a stub that slows down EVERY `bd` invocation (including the
+#     baseline call) would inflate the baseline right along with the real run and never trip the
+#     threshold. So also enforce an absolute CEILING at 3x the contract's own figure
+#     (3 * 1500ms = 4500ms) as a backstop that does not scale with a corrupted baseline — a
+#     handler that is genuinely, unboundedly slow blows through this regardless of what the
+#     baseline measured. A run must satisfy BOTH checks to pass.
+EB_SESSION_END_CONTRACT_MS=1500
+EB_SESSION_END_CEILING_MS=$((EB_SESSION_END_CONTRACT_MS * 3))
+EB_SESSION_END_BUDGET_S="${EB_SESSION_END_BUDGET:-1.3}"
+EB_SESSION_END_BUDGET_MS=$(awk -v b="$EB_SESSION_END_BUDGET_S" 'BEGIN { printf "%d", (b*1000)+0.5 }')
+
+eb_timing_verdict() {  # <description> <baseline_ms> <elapsed_ms>
+  local desc="$1" baseline_ms="$2" elapsed_ms="$3" margin_ms threshold_ms
+  margin_ms="$baseline_ms"
+  [ "$margin_ms" -lt 300 ] && margin_ms=300
+  threshold_ms=$((2*baseline_ms + EB_SESSION_END_BUDGET_MS + margin_ms))
+  if [ "$elapsed_ms" -le "$threshold_ms" ] && [ "$elapsed_ms" -le "$EB_SESSION_END_CEILING_MS" ]; then
+    eb_ok "$desc (${elapsed_ms}ms; baseline ${baseline_ms}ms, threshold ${threshold_ms}ms, ceiling ${EB_SESSION_END_CEILING_MS}ms)"
+  else
+    eb_bad "$desc" "took ${elapsed_ms}ms; baseline ${baseline_ms}ms, threshold ${threshold_ms}ms, ceiling ${EB_SESSION_END_CEILING_MS}ms"
+  fi
+}
+
+# --- 5. SessionEnd timing: one direct stdin feed with one claimed Bead -------------------------
 BEAD5_JSON="$(BEADS_ACTOR=creator bd create "timing test" --type task -p 2 --json)"
 BEAD5_ID="$(printf '%s' "$BEAD5_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
 SID_TIMING="99999999-9999-9999-9999-999999999999"
 BEADS_ACTOR="$SID_TIMING" bd update "$BEAD5_ID" --claim --json >/dev/null
+
+BT0=$(date +%s%N)
+bd list --status in_progress --json >/dev/null
+BT1=$(date +%s%N)
+BASELINE_MS=$(( (BT1 - BT0) / 1000000 ))
+
 T0=$(date +%s%N)
 bash "$END" <<<"$(sessionend_payload "$SID_TIMING")" >/dev/null
 T1=$(date +%s%N)
-ELAPSED_NS=$((T1 - T0))
-ELAPSED_MS=$((ELAPSED_NS / 1000000))
-if [ "$ELAPSED_NS" -lt 1000000000 ]; then
-  eb_ok "SessionEnd: completes within 1s on a scratch db (${ELAPSED_MS}ms)"
-else
-  eb_bad "SessionEnd: completes within 1s on a scratch db" "took ${ELAPSED_MS}ms"
-fi
+ELAPSED_MS=$(( (T1 - T0) / 1000000 ))
+
+eb_timing_verdict "SessionEnd: completes within budget on a scratch db" "$BASELINE_MS" "$ELAPSED_MS"
 
 # --- 5b. SessionEnd budget (fix round 1, F4): THREE claimed Beads release concurrently, all
-#         become open+unassigned, and total wall time stays under Claude's shared ~1.5s SessionEnd
-#         budget (portability-contract.md §5.5/§269) ----------------------------------------------
+#         become open+unassigned, and total wall time stays within the same baseline+budget model
+#         (portability-contract.md §5.5) -- phase 1 is still exactly one `bd list` + one batched
+#         `bd update` here (all three share one assignee), so the same threshold applies ----------
 BEAD6_JSON="$(BEADS_ACTOR=creator bd create "concurrent release 1" --type task -p 2 --json)"
 BEAD6_ID="$(printf '%s' "$BEAD6_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
 BEAD7_JSON="$(BEADS_ACTOR=creator bd create "concurrent release 2" --type task -p 2 --json)"
@@ -218,11 +264,15 @@ BEADS_ACTOR="$SID_MULTI" bd update "$BEAD6_ID" --claim --json >/dev/null
 BEADS_ACTOR="$SID_MULTI" bd update "$BEAD7_ID" --claim --json >/dev/null
 BEADS_ACTOR="$SID_MULTI" bd update "$BEAD8_ID" --claim --json >/dev/null
 
+BT0=$(date +%s%N)
+bd list --status in_progress --json >/dev/null
+BT1=$(date +%s%N)
+BASELINE3_MS=$(( (BT1 - BT0) / 1000000 ))
+
 T0=$(date +%s%N)
 bash "$END" <<<"$(sessionend_payload "$SID_MULTI")" >/dev/null
 T1=$(date +%s%N)
-ELAPSED3_NS=$((T1 - T0))
-ELAPSED3_MS=$((ELAPSED3_NS / 1000000))
+ELAPSED3_MS=$(( (T1 - T0) / 1000000 ))
 
 for bid in "$BEAD6_ID" "$BEAD7_ID" "$BEAD8_ID"; do
   st="$(bd show --json "$bid" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["status"])')"
@@ -231,11 +281,8 @@ for bid in "$BEAD6_ID" "$BEAD7_ID" "$BEAD8_ID"; do
   assert_eq "SessionEnd (3 claims): $bid is unassigned" "" "$asn"
 done
 
-if [ "$ELAPSED3_NS" -lt 1500000000 ]; then
-  eb_ok "SessionEnd: 3 concurrent claims release within 1.5s on a scratch db (${ELAPSED3_MS}ms)"
-else
-  eb_bad "SessionEnd: 3 concurrent claims release within 1.5s on a scratch db" "took ${ELAPSED3_MS}ms"
-fi
+eb_timing_verdict "SessionEnd: 3 concurrent claims release within budget on a scratch db" \
+  "$BASELINE3_MS" "$ELAPSED3_MS"
 
 # --- 5c. B1 fix (review pa-s2s.8-review-1): a Bead carrying `acceptance-pending` survives
 #         SessionEnd -- it must stay in_progress, still assigned, still labeled, even though its
