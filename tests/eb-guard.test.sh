@@ -26,9 +26,14 @@ NONGIT_CWD="$(mktemp -d)"
 GIT_CWD="$(mktemp -d)"
 git init -q "$GIT_CWD"
 
+# Clean up on any exit path, including an early one (assertion failure, Ctrl-C, etc.), not just
+# the normal fall-through at the bottom of the script. `scratch` is declared before the trap so
+# `set -u` can't fault on it if something exits before eb_scratch_db assigns it.
+scratch=""
+trap 'rm -rf "$scratch" "$GENERIC_CWD" "$NONGIT_CWD" "$GIT_CWD"' EXIT
+
 # A scratch db with one open and one closed Bead, for the `--status open` checks that need a
 # live `bd show`.
-scratch=""
 eb_scratch_db scratch
 OPEN_JSON="$(bd create "guard test open" --type task -p 2 --json)"
 OPEN_ID="$(printf '%s' "$OPEN_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
@@ -107,5 +112,4 @@ else
   eb_bad "m4: guard's inner bd-show timeout < PreToolUse hook timeout" "inner=${inner_timeout}s hook=${hook_timeout}s"
 fi
 
-rm -rf "$scratch" "$GENERIC_CWD" "$NONGIT_CWD" "$GIT_CWD"
 eb_report
