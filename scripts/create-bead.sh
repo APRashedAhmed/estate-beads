@@ -184,7 +184,7 @@ if [[ -n "$workunit" ]]; then
     # is left byte-identical and reported as a manual edit, per review
     # pa-e38.5-review-1 MAJOR 1.
     flow_line="$(grep -E '^beads:[[:space:]]*\[' "$manifest" | head -n1)"
-    if ! printf '%s\n' "$flow_line" | grep -qE '^beads:[[:space:]]*\[[^][]*\][[:space:]]*(#.*)?$'; then
+    if ! printf '%s\n' "$flow_line" | grep -qE '^beads:[[:space:]]*\[[^][#]*\][[:space:]]*(#.*)?$'; then
       die "Bead $id was created, but '$manifest' has a 'beads:' flow list in a form this script cannot safely rewrite (a multi-line flow list, or unrecognized content after the closing ']'). The manifest was left unchanged. Add the backlink by hand: edit '$manifest' so its 'beads:' list includes $id, then run: $SCRIPT_DIR/check-bead.sh --id $id. Do not re-run this script."
     fi
     # Rebuild the list, skipping a duplicate id (quoted or bare) so a re-run

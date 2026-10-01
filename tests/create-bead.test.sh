@@ -112,6 +112,17 @@ after_tr="$(cat "$scratch/wu-flow-trailing/workunit.yaml")"
   && eb_ok "unsupported trailing content: workunit.yaml left byte-identical" \
   || eb_bad "unsupported trailing content: workunit.yaml left byte-identical"
 
+# --- workunit.yaml backlink: a '#' INSIDE the brackets is rejected, not treated as a comment ------
+mkdir -p "$scratch/wu-flow-hash-inside"
+printf 'slug: flow-hash-inside\nbeads: [existing-a # not-a-real-id]\n' > "$scratch/wu-flow-hash-inside/workunit.yaml"
+before_hi="$(cat "$scratch/wu-flow-hash-inside/workunit.yaml")"
+out_hi="$(scripts/create-bead.sh --title "FlowHashInside" --description d --acceptance a --project p --accept evidence --recognized-by x --workunit "$scratch/wu-flow-hash-inside" 2>&1)"; rc_hi=$?
+assert_rc "create-bead.sh exits non-zero for a '#' inside the brackets" 1 "$rc_hi"
+after_hi="$(cat "$scratch/wu-flow-hash-inside/workunit.yaml")"
+[[ "$before_hi" == "$after_hi" ]] \
+  && eb_ok "'#' inside the brackets: workunit.yaml left byte-identical" \
+  || eb_bad "'#' inside the brackets: workunit.yaml left byte-identical"
+
 # --- workunit.yaml backlink: a trailing '# comment' is preserved, id still appended (review-1 MAJOR 1 optional) -
 mkdir -p "$scratch/wu-flow-comment"
 printf 'slug: flow-comment\nbeads: [existing-a] # keep me\n' > "$scratch/wu-flow-comment/workunit.yaml"
@@ -135,5 +146,15 @@ grep -qF "beads: [\"existing-a\", 'existing-b', $quotedid]" "$scratch/wu-flow-qu
 scripts/check-bead.sh --id "$quotedid" >/dev/null 2>&1 \
   && eb_ok "check-bead.sh finds the id in a quoted-id flow list" \
   || eb_bad "check-bead.sh finds the id in a quoted-id flow list"
+
+# check-bead.sh must match an id that is itself written quoted, double or single
+printf 'slug: flow-quoted-self\nbeads: ["%s"]\nlifecycle: beads\n' "$quotedid" > "$scratch/wu-flow-quoted/workunit.yaml"
+scripts/check-bead.sh --id "$quotedid" >/dev/null 2>&1 \
+  && eb_ok "check-bead.sh matches an id written double-quoted in the flow list" \
+  || eb_bad "check-bead.sh matches an id written double-quoted in the flow list"
+printf "slug: flow-quoted-self\nbeads: ['%s']\nlifecycle: beads\n" "$quotedid" > "$scratch/wu-flow-quoted/workunit.yaml"
+scripts/check-bead.sh --id "$quotedid" >/dev/null 2>&1 \
+  && eb_ok "check-bead.sh matches an id written single-quoted in the flow list" \
+  || eb_bad "check-bead.sh matches an id written single-quoted in the flow list"
 
 eb_report
