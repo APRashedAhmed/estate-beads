@@ -53,12 +53,17 @@ for mode in evidence independent operator; do
   bid="$(scripts/create-bead.sh --title "Closed-$mode" --description d --acceptance a --project p --accept "$mode" --recognized-by x)"
   scripts/bead-claim.sh --id "$bid" --model sonnet >/dev/null
   bd close "$bid" --reason accepted >/dev/null
+  closed_status="$(bd show --json "$bid" 2>/dev/null | jq '.[0].status')"
   closed_labels="$(bd show --json "$bid" 2>/dev/null | jq -S '.[0].labels')"
-  closed_notes="$(bd show --json "$bid" 2>/dev/null | jq -r '.[0].notes')"
+  closed_notes="$(bd show --json "$bid" 2>/dev/null | jq '.[0].notes')"
   out="$(scripts/bead-report-success.sh --id "$bid" --evidence "tests pass")"
+  rc=$?
   assert_eq "accept:$mode closed Bead reports ALREADY-CLOSED" "ALREADY-CLOSED" "$out"
+  assert_rc "accept:$mode closed Bead exits 0" "0" "$rc"
+  after_status="$(bd show --json "$bid" 2>/dev/null | jq '.[0].status')"
   after_labels="$(bd show --json "$bid" 2>/dev/null | jq -S '.[0].labels')"
-  after_notes="$(bd show --json "$bid" 2>/dev/null | jq -r '.[0].notes')"
+  after_notes="$(bd show --json "$bid" 2>/dev/null | jq '.[0].notes')"
+  assert_eq "accept:$mode ALREADY-CLOSED leaves status unchanged" "$closed_status" "$after_status"
   assert_eq "accept:$mode ALREADY-CLOSED leaves labels byte-identical" "$closed_labels" "$after_labels"
   assert_eq "accept:$mode ALREADY-CLOSED leaves notes byte-identical" "$closed_notes" "$after_notes"
 done
