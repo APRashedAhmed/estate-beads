@@ -2,7 +2,9 @@
 # eb-closeout-report.sh: two `beads:` in a fixture handoff -> two
 # bead-report-success.sh calls, evidence citing the archived path; no beads ->
 # "no beads"; no path given -> loud failure naming the dispatcher gap
-# (design §12.6; plan U5).
+# (design §12.6; plan U5). A handoff naming one open and one closed Bead -> the
+# open one reports as before, the closed one prints "<id>: ALREADY-CLOSED"
+# (pa-g6y, work-unit 2026-10-02-closeout-closed-bead-guard).
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -51,5 +53,19 @@ assert_contains "the failure names the dispatcher gap" "$out3" "ckpt-participant
 out4="$(CKPT_HANDOFF_PATH="$empty_handoff" scripts/eb-closeout-report.sh)"; rc4=$?
 assert_rc "\$CKPT_HANDOFF_PATH alone resolves the handoff" 0 "$rc4"
 assert_eq "\$CKPT_HANDOFF_PATH path behaves the same as \$1" "no beads" "$out4"
+
+# --- one open, one closed Bead in beads: -> open reports as before, closed prints ALREADY-CLOSED --
+open_bead="$(scripts/create-bead.sh --title "Open" --description d --acceptance a --project p --accept evidence --recognized-by x)"
+closed_bead="$(scripts/create-bead.sh --title "Closed" --description d --acceptance a --project p --accept evidence --recognized-by x)"
+bd close "$closed_bead" --reason accepted >/dev/null
+
+mixed_handoff="$scratch/handoff-mixed.md"
+printf -- '---\nstatus: complete\nupdated: 2026-09-24\nbeads: [%s, %s]\n---\n\n# Handoff (mixed)\n' \
+  "$open_bead" "$closed_bead" >"$mixed_handoff"
+
+out5="$(scripts/eb-closeout-report.sh "$mixed_handoff")"; rc5=$?
+assert_rc "mixed open/closed handoff exits 0" 0 "$rc5"
+assert_contains "the open Bead reports CLOSED as before" "$out5" "$open_bead: CLOSED"
+assert_contains "the closed Bead reports ALREADY-CLOSED" "$out5" "$closed_bead: ALREADY-CLOSED"
 
 eb_report
