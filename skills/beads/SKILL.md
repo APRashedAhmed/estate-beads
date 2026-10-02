@@ -46,7 +46,7 @@ failure names what broke and the exact remedy.
 | `bead-read.sh` | the faithful read; `--resume` adds the work-unit path; `--next` prints only the current `NEXT:` value, plain |
 | `bead-claim.sh --id <id> [--model <sonnet\|opus\|fable>] [--effort <level>]` | claim with the exit-code branch absorbed and `executor.model` and, when known, `executor.effort` recorded. Prints `CLAIMED` or `LOST` |
 | `bead-progress.sh` | the rule-5 progress block, rewritten in place |
-| `bead-report-success.sh` | rule 9 — evidence, `acceptance-pending`, and a close only under `accept:evidence`. Prints `CLOSED` or `ACCEPTANCE-PENDING <authority>` |
+| `bead-report-success.sh` | rule 9 — evidence, `acceptance-pending`, and a close only under `accept:evidence`. Prints `CLOSED`, `ACCEPTANCE-PENDING <authority>`, or `ALREADY-CLOSED` (Bead already closed; no write) |
 | `bead-accept.sh --id <id> --evidence <path>` | closes an `accept:evidence` Bead already `acceptance-pending`, reclaimed off-script. Prints `CLOSED` |
 | `bead-accept.sh --id <id> --evidence '<message>' --operator` | closes an `accept:operator` Bead on the operator's say-so in chat (cite the message, not a file) — refuses without `--operator`; never accepted for `accept:independent` (use `--review` instead). Prints `CLOSED` |
 | `bead-accept.sh --review <report>` | the closer for a review verdict. Prints `CLOSED \| ACCEPTANCE-PENDING <authority> \| FAILED <cycles-left> \| HALTED [<reason>] \| INCOMPLETE \| BLOCKED-BY <ids>` (exit 1, nothing changed) |

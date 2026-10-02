@@ -58,9 +58,11 @@ only what survives as judgment; the guard's own deny message carries the rest.
    the operator only for an operator-reserved class or when no other receiver is admitted.
 9. **Report success; do not self-close.** Run
    `scripts/bead-report-success.sh --id <id> --evidence "<what you checked, where the artifacts are>"`.
-   It adds the evidence line and the `acceptance-pending` label, rewrites the rule-5 block's
-   `IN-PROGRESS`/`NEXT` to name the pending acceptance (contract §9 rule 9), then branches on the
-   Bead's `accept:` label — it is the authority closing, never you:
+   If the Bead is already `closed`, it prints `ALREADY-CLOSED` and exits 0 without writing anything —
+   no evidence line, label, or notes change, under any `accept:` mode. Otherwise it adds the evidence
+   line and the `acceptance-pending` label, rewrites the rule-5 block's `IN-PROGRESS`/`NEXT` to name
+   the pending acceptance (contract §9 rule 9), then branches on the Bead's `accept:` label — it is
+   the authority closing, never you:
 
    - `accept:evidence` → closes now, prints `CLOSED`; `NEXT:` reads `none — closed`.
    - `accept:operator` → sets `IN-PROGRESS: none — awaiting acceptance` and
