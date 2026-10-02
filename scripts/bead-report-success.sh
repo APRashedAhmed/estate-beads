@@ -2,7 +2,8 @@
 # Rule 9: report success. Adds the evidence line and the acceptance-pending label,
 # then closes ONLY under accept:evidence. Under any other accept: mode it stops and
 # names the acceptance authority.
-# Decision vocabulary on stdout, one line: CLOSED | ACCEPTANCE-PENDING <authority>.
+# A Bead already closed is a no-op: print ALREADY-CLOSED and exit 0 before any write.
+# Decision vocabulary on stdout, one line: CLOSED | ACCEPTANCE-PENDING <authority> | ALREADY-CLOSED.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,6 +25,12 @@ command -v jq >/dev/null || die "jq not on PATH. Install jq, then re-run."
 raw="$(bd show --json "$id")" || die "'bd show --json $id' failed. Confirm the id, then re-run."
 bead="$(printf '%s' "$raw" | jq '.[0]')"
 [[ "$bead" != "null" && -n "$bead" ]] || die "no Bead '$id' in the database. Confirm the id, then re-run."
+
+status="$(printf '%s' "$bead" | jq -r '.status // ""')"
+if [[ "$status" == "closed" ]]; then
+  printf 'ALREADY-CLOSED\n'
+  exit 0
+fi
 
 mode="$(printf '%s' "$bead" | jq -r '[.labels[]? | select(startswith("accept:"))] | if length == 1 then .[0][7:] else "" end')"
 [[ -n "$mode" ]] || die "Bead $id does not carry exactly one 'accept:' label, so the acceptance authority is undetermined. Run check-bead.sh --id $id, fix the labels, then re-run."

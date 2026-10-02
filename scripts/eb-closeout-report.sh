@@ -6,7 +6,9 @@
 # `bead-report-success.sh --id <id> --evidence "archived handoff: <path>"`
 # once per Bead named there. Never dispatches the accepting review (design
 # §13, Dispatch: that is the executor's own session, after
-# `bead-report-success.sh` prints `ACCEPTANCE-PENDING review`).
+# `bead-report-success.sh` prints `ACCEPTANCE-PENDING review`). A Bead already
+# closed prints `<id>: ALREADY-CLOSED` (bead-report-success.sh's own guard; no
+# write happens).
 #
 # A handoff with no `beads:` (or an empty list) is legitimate — a unit with no
 # Bead (checkpointing skills/handoff/SKILL.md line 29) — and prints "no beads"
