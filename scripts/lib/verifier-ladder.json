@@ -1,17 +1,18 @@
 {
-  "source": "$SEAT_ROOT/PerAnkh/projects/agent-orchestration/workunits/2026-09-29-orchestrator-mode-rework/orchestrator-mode-rework-decisions.md §3",
+  "source": "$SEAT_ROOT/PerAnkh/projects/permaat/workunits/2026-10-05-verifier-ladder-resync/2026-10-05-verifier-ladder-resync.md 'Target mapping' (from tiers.md 'Verifier ladders')",
   "note": "~/.agents/skills/orchestrator-mode/references/tiers.md is the human copy; this file is the closer's copy. Keep them in step. haiku stays rank 1 only so legacy Beads recorded with it still evaluate.",
   "claude_ranks": { "haiku": 1, "sonnet": 2, "opus": 3, "fable": 4 },
   "executor_rows": {
     "sonnet": { "low": 1, "medium": 1, "high": 2, "xhigh": 2, "max": 2, "missing": 2 },
-    "opus":   { "low": 3, "medium": 3, "high": 4, "xhigh": 4, "max": 4, "missing": 4 },
-    "fable":  { "low": 5, "medium": 5, "high": 5, "xhigh": 5, "max": 5, "missing": 5 }
+    "opus":   { "low": 3, "medium": 3, "high": 4, "xhigh": 5, "max": 5, "missing": 5 },
+    "fable":  { "low": 6, "medium": 6, "high": 6, "xhigh": 6, "max": 6, "missing": 6 }
   },
   "codex_points": {
-    "gpt-6-sol@high": 1,
-    "gpt-5.6-sol@low": 2,
-    "gpt-5.6-sol@high": 3,
-    "gpt-6-astra@low": 4,
-    "gpt-6-astra@medium": 5
+    "gpt-6.1-sol@low": 1,
+    "gpt-6.1-sol@medium": 2,
+    "gpt-6.1-sol@high": 3,
+    "gpt-6.1-sol@xhigh": 4,
+    "gpt-6-astra@low": 5,
+    "gpt-6-astra@medium": 6
   }
 }

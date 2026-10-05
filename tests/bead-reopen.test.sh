@@ -78,7 +78,7 @@ scripts/bead-report-success.sh --id "$id5" --evidence "initial" >/dev/null
 pass5="$REPORTS/pass5.md"; eb_write_review "$pass5" "$id5" PASS fable fresh ""
 scripts/bead-accept.sh --review "$pass5" >/dev/null
 
-cxbelow="$REPORTS/codex-below.md"; eb_write_review_codex "$cxbelow" "$id5" FAIL gpt-6-sol high fresh "$pass5"
+cxbelow="$REPORTS/codex-below.md"; eb_write_review_codex "$cxbelow" "$id5" FAIL gpt-6.1-sol low fresh "$pass5"
 out="$(scripts/bead-reopen.sh --review "$cxbelow" 2>&1)"; rc=$?
 assert_rc "a below-ladder codex reviewer (opus exec, point 1) is refused on reopen" 1 "$rc"
 assert_eq "the refused codex reopen leaves the Bead closed" "closed" "$(bd show --json "$id5" 2>/dev/null | jq -r '.[0].status')"
