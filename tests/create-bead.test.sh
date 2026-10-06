@@ -247,4 +247,21 @@ case "$err" in
   *) eb_bad "bd's error is printed before the warning" "$err" ;;
 esac
 
+# --- a value-taking flag as the LAST argument dies with a cause and remedy -----------------------
+for lastflag in --deps --key; do
+  n0="$(bd list --json --limit 0 2>/dev/null | jq length)"
+  out="$(scripts/create-bead.sh --title "TrailingFlag" "${CB_COMMON[@]}" "$lastflag" 2>&1)"; rc=$?
+  n1="$(bd list --json --limit 0 2>/dev/null | jq length)"
+  [[ "$n0" =~ ^[0-9]+$ && "$n1" =~ ^[0-9]+$ ]] \
+    && eb_ok "trailing $lastflag Bead counts are non-empty integers" \
+    || eb_bad "trailing $lastflag Bead counts are non-empty integers" "before='$n0' after='$n1'"
+  assert_rc "trailing $lastflag exits 1" 1 "$rc"
+  assert_contains "trailing $lastflag names the flag and its missing value" "$out" "$lastflag requires a value"
+  assert_eq "trailing $lastflag creates no Bead" "$n0" "$n1"
+done
+
+# --- a boolean flag as the LAST argument still works (guard must not reject it) -----------------
+out="$(scripts/create-bead.sh --title "TrailingForce" "${CB_COMMON[@]}" --force 2>&1)"; rc=$?
+assert_rc "trailing boolean --force still exits 0" 0 "$rc"
+
 eb_report

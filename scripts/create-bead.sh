@@ -30,6 +30,10 @@ key=""; extra_labels=(); class=""; budget=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --title|--type|--description|--acceptance|--project|--accept|--recognized-by|--tier|--effort|--workunit|--governs|--packet|--parent|--deps|--migrated-from|--migration-log|--by|--key|--label|--class|--budget)
+      [[ $# -ge 2 ]] || die "$1 requires a value; supply one or omit $1, then re-run." ;;
+  esac
+  case "$1" in
     --title)          title="${2-}"; shift 2 ;;
     --type)           btype="${2-}"; shift 2 ;;
     --description)    description="${2-}"; shift 2 ;;
