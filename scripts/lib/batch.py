@@ -198,8 +198,15 @@ def main() -> int:
             die(f"unit '{key}' deps must be a list")
             return 1
         deps = []
+        dep_edge_for = {}
         for d in deps_raw:
             dep = parse_dep(d, keyset)
+            prev = dep_edge_for.get(dep["value"])
+            if prev is not None and prev != dep["edge"]:
+                die(f"unit '{key}' gives '{dep['value']}' two edge types ('{prev}' and '{dep['edge']}'); "
+                    "bd allows one edge type per target")
+                return 1
+            dep_edge_for[dep["value"]] = dep["edge"]
             if dep["kind"] == "sibling":
                 if dep["value"] == key:
                     die(f"unit '{key}' names itself in its own deps ('{d}')")

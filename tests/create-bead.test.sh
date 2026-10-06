@@ -157,4 +157,69 @@ scripts/check-bead.sh --id "$quotedid" >/dev/null 2>&1 \
   && eb_ok "check-bead.sh matches an id written single-quoted in the flow list" \
   || eb_bad "check-bead.sh matches an id written single-quoted in the flow list"
 
+# --- --deps failures relay bd's own error (bd --json writes it to stdout) -------------------------
+CB_COMMON=(--description d --acceptance a --project p --accept evidence --recognized-by x)
+a="$(scripts/create-bead.sh --title "DepTargetA" "${CB_COMMON[@]}")"
+b="$(scripts/create-bead.sh --title "DepTargetB" "${CB_COMMON[@]}")"
+
+# 1. missing target relays bd's error and a remedy
+out="$(scripts/create-bead.sh --title "DepMissing" "${CB_COMMON[@]}" --deps "blocked-by:zz-999" 2>&1)"; rc=$?
+assert_rc "missing --deps target exits 1" 1 "$rc"
+assert_contains "missing --deps target relays bd's error text" "$out" 'no issue found matching "zz-999"'
+assert_contains "missing --deps target remedy names 'bd show'" "$out" "bd show"
+
+# 2. same target, two edge types: refused before bd, no Bead created
+n0="$(bd list --json --limit 0 2>/dev/null | jq length)"
+out="$(scripts/create-bead.sh --title "DepSameTarget" "${CB_COMMON[@]}" --deps "blocked-by:$a,discovered-from:$a" 2>&1)"; rc=$?
+n1="$(bd list --json --limit 0 2>/dev/null | jq length)"
+assert_rc "same target with two edge types exits 1" 1 "$rc"
+assert_contains "same-target refusal says 'two edge types'" "$out" "two edge types"
+assert_contains "same-target refusal keeps the typed word blocked-by" "$out" "blocked-by:$a"
+assert_contains "same-target refusal names discovered-from" "$out" "discovered-from"
+assert_eq "same-target refusal creates no Bead" "$n0" "$n1"
+
+# 3. distinct targets with two edge types succeed
+n0="$(bd list --json --limit 0 2>/dev/null | jq length)"
+id3="$(scripts/create-bead.sh --title "DepDistinct" "${CB_COMMON[@]}" --deps "blocked-by:$a,discovered-from:$b")"; rc=$?
+assert_rc "distinct targets with two edge types exit 0" 0 "$rc"
+dep3="$(bd show --json "$id3" 2>/dev/null | jq -c '.[0].dependencies')"
+assert_eq "distinct targets land exactly two edges" "2" "$(printf '%s' "$dep3" | jq 'length')"
+assert_eq "edge to the blocker is blocks" '"blocks"' \
+  "$(printf '%s' "$dep3" | jq -c --arg i "$a" '.[] | select(.id==$i) | .dependency_type')"
+assert_eq "edge to the origin is discovered-from" '"discovered-from"' \
+  "$(printf '%s' "$dep3" | jq -c --arg i "$b" '.[] | select(.id==$i) | .dependency_type')"
+
+# 4. bare id and same-type repeat still work
+id4="$(scripts/create-bead.sh --title "DepBare" "${CB_COMMON[@]}" --deps "$a")"; rc=$?
+assert_rc "bare --deps id exits 0" 0 "$rc"
+edges="$(bd show --json "$id4" 2>/dev/null | jq -c '.[0].dependencies | map({id,dependency_type})')"
+assert_eq "bare --deps id is a single blocks edge" "[{\"id\":\"$a\",\"dependency_type\":\"blocks\"}]" "$edges"
+id4b="$(scripts/create-bead.sh --title "DepRepeat" "${CB_COMMON[@]}" --deps "blocked-by:$a,$a")"; rc=$?
+assert_rc "same-type repeat exits 0" 0 "$rc"
+edges="$(bd show --json "$id4b" 2>/dev/null | jq -c '.[0].dependencies | map({id,dependency_type})')"
+assert_eq "same-type repeat is a single blocks edge" "[{\"id\":\"$a\",\"dependency_type\":\"blocks\"}]" "$edges"
+
+# 5. unknown edge type is named with a remedy
+out="$(scripts/create-bead.sh --title "DepUnknown" "${CB_COMMON[@]}" --deps "foo:$a" 2>&1)"; rc=$?
+assert_rc "unknown edge type exits 1" 1 "$rc"
+assert_contains "unknown edge type relays bd's text" "$out" 'unknown dependency type "foo"'
+assert_contains "unknown edge type remedy names blocked-by:<id>" "$out" "blocked-by:<id>"
+
+# 6. a bd warning never stands alone: bd's error comes first, the warning stays visible after it.
+# From a non-git dir bd warns about beads.role on stderr (eb_scratch_db redirects HOME, not repo config).
+cd "$scratch" || exit 1
+err="$("$ROOT/scripts/create-bead.sh" --title "DepWarn" "${CB_COMMON[@]}" --deps "blocked-by:zz-999" 2>&1 >/dev/null)"; rc=$?
+cd "$ROOT" || exit 1
+assert_rc "warning scenario exits 1" 1 "$rc"
+first_line="${err%%$'\n'*}"
+case "$first_line" in
+  "create-bead: bd create failed: resolving --deps target"*) eb_ok "first stderr line is bd's error, not the warning" ;;
+  *) eb_bad "first stderr line is bd's error, not the warning" "first line: $first_line" ;;
+esac
+assert_contains "the beads.role warning is still shown" "$err" "beads.role not configured"
+case "$err" in
+  *"bd create failed: resolving"*"beads.role not configured"*) eb_ok "bd's error is printed before the warning" ;;
+  *) eb_bad "bd's error is printed before the warning" "$err" ;;
+esac
+
 eb_report

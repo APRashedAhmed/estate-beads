@@ -134,4 +134,32 @@ assert_eq "keyless unit rerun resolves to the SAME id (title-fallback idempotenc
 count_after_keyless="$(bd list --json --limit 0 | jq 'length')"
 assert_eq "keyless unit rerun creates no duplicate Bead" "6" "$count_after_keyless"
 
+# --- same key under two edge types is refused before any Bead is created ---------------------------
+samedep_artifact="$scratch/plan-samedep.md"
+cat > "$samedep_artifact" <<'EOF'
+```yaml
+project: sample-proj
+units:
+  - key: k1
+    title: "Same Dep K1"
+    description: "Target."
+    acceptance: "K1 lands."
+    accept: evidence
+  - key: k2
+    title: "Same Dep K2"
+    description: "Names k1 under two edge types."
+    acceptance: "K2 lands."
+    accept: evidence
+    deps: ["blocked-by:k1", "discovered-from:k1"]
+```
+EOF
+n_before_samedep="$(bd list --json --limit 0 | jq 'length')"
+samedep_err="$(scripts/create-beads-batch.sh --artifact "$samedep_artifact" 2>&1 >/dev/null)"; samedep_rc=$?
+n_after_samedep="$(bd list --json --limit 0 | jq 'length')"
+assert_rc "same-key two-edge-type unit exits 1" 1 "$samedep_rc"
+assert_contains "same-key refusal names the unit key" "$samedep_err" "unit 'k2'"
+assert_contains "same-key refusal names the target k1" "$samedep_err" "'k1'"
+assert_contains "same-key refusal says two edge types" "$samedep_err" "two edge types"
+assert_eq "same-key refusal creates zero Beads" "$n_before_samedep" "$n_after_samedep"
+
 eb_report

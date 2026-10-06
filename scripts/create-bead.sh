@@ -90,6 +90,27 @@ fi
 if [[ "$deps" == *"blocks:"* ]]; then
   die "--deps carries 'blocks:', which points the edge the other way (the target depends on this Bead). Use 'blocked-by:<id>' or a bare id, then re-run."
 fi
+# One edge type per target: bd refuses blocked-by:X,discovered-from:X. Bare id and
+# depends-on/blocked-by all mean a 'blocks' edge; same-type repeats are fine (bd dedupes).
+if [[ -n "$deps" ]]; then
+  declare -A __dep_type_for=() __dep_word_for=()
+  IFS=',' read -r -a __dep_entries <<<"$deps"
+  for __e in "${__dep_entries[@]}"; do
+    __e="${__e#"${__e%%[![:space:]]*}"}"; __e="${__e%"${__e##*[![:space:]]}"}"
+    [[ -n "$__e" ]] || continue
+    if [[ "$__e" == *:* ]]; then __t="${__e%%:*}"; __id="${__e#*:}"; else __t="blocked-by"; __id="$__e"; fi
+    [[ -n "$__id" ]] || die "--deps entry '$__e' has no id. Use 'blocked-by:<id>' or 'discovered-from:<id>', then re-run."
+    case "$__t" in blocked-by|depends-on) __n="blocks" ;; *) __n="$__t" ;; esac
+    if [[ -n "${__dep_type_for[$__id]:-}" && "${__dep_type_for[$__id]}" != "$__n" ]]; then
+      __keep="keep exactly one edge type for $__id"
+      if [[ "${__dep_type_for[$__id]}" == blocks || "$__n" == blocks ]]; then
+        __keep="keep 'blocked-by:$__id' and drop the other edge for $__id (or point it at a different id)"
+      fi
+      die "--deps gives '$__id' two edge types ('${__dep_word_for[$__id]}' and '$__t'); bd allows one edge type per target. ${__keep}, then re-run; no Bead was created."
+    fi
+    __dep_type_for[$__id]="$__n"; __dep_word_for[$__id]="$__t"
+  done
+fi
 if [[ ${#migrated_from[@]} -gt 0 && -z "$workunit" ]]; then
   die "--migrated-from requires --workunit (a §5.2 migration always has a work-unit path); supply --workunit and re-run."
 fi
@@ -160,13 +181,26 @@ cmd=(bd create "$title" --type "$btype" --description "$description"
 # yielding two acceptance authorities on one Bead. Always disable inheritance.
 [[ -n "$parent"  ]] && cmd+=(--parent "$parent" --no-inherit-labels)
 
-if ! created="$("${cmd[@]}" 2>/tmp/create-bead.$$.err)"; then
-  printf '%s: bd create failed:\n' "$SELF" >&2
-  cat /tmp/create-bead.$$.err >&2
-  rm -f /tmp/create-bead.$$.err
-  die "fix the reported cause, then re-run; no Bead was created."
+err_file="/tmp/create-bead.$$.err"
+if ! created="$("${cmd[@]}" 2>"$err_file")"; then
+  # bd --json puts its error JSON on stdout, not stderr: relay it first, then any stderr.
+  bd_err="$(printf '%s' "$created" | jq -r '.error // empty' 2>/dev/null || true)"
+  [[ -n "$bd_err" ]] || bd_err="$created"
+  printf '%s: bd create failed: %s\n' "$SELF" "${bd_err:-<bd printed no error text>}" >&2
+  if [[ -s "$err_file" ]]; then cat "$err_file" >&2; fi
+  rm -f "$err_file"
+  case "$bd_err" in
+    *"no issue found matching"*)
+      die "a --deps target does not exist in this database. Check the id with 'bd show <id>' (database: \$BEADS_DIR=$BEADS_DIR), correct --deps, then re-run; no Bead was created." ;;
+    *"cannot attach both"*|*"only carry one dependency type"*)
+      die "--deps names one target with two edge types; bd allows one edge type per target. Keep exactly one edge type for that id (keep 'blocked-by:<id>' when one of them is a blocker; point the other edge at a different id or drop it), then re-run; no Bead was created." ;;
+    *"unknown dependency type"*)
+      die "--deps has an edge type bd does not know. Use 'blocked-by:<id>' or 'discovered-from:<id>', then re-run; no Bead was created." ;;
+    *)
+      die "fix the cause bd reported above, then re-run; no Bead was created." ;;
+  esac
 fi
-rm -f /tmp/create-bead.$$.err
+rm -f "$err_file"
 
 id="$(printf '%s' "$created" | jq -r '.id // empty')"
 [[ -n "$id" ]] || die "bd create returned no id. Run 'bd list --json' to check whether a Bead landed before re-running."

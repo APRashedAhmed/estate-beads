@@ -68,7 +68,7 @@ T3 against its siblings.
   non-negative integer. Paths in ADR-025 form (`$SEAT_ROOT/<district>/<repo>/<path>`). These keys are
   hyphenated — `--set-metadata` rejects them, so they go only through `--metadata '<json>'`.
 - **Dependencies** — real blocking facts only. Artifact lineage is not a dependency; chronology never
-  is; `external:` deps are not used. Pass `--deps "blocked-by:<id>,discovered-from:<id>"`.
+  is; `external:` deps are not used. Pass `--deps "blocked-by:<blocker id>"`, adding `,discovered-from:<origin id>` only when the origin is a *different* Bead; bd allows one edge type per target, so a Bead that both blocks this one and is its origin gets `blocked-by:` only.
 
 ## Create one Bead
 
@@ -85,7 +85,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/create-bead.sh \
   [--class "<bounded-increment|hardened>"] [--budget "cycles=<n>"] \
   [--workunit "<$SEAT_ROOT/PerAnkh/projects/<project>/workunits/<date>-<slug>/>"] \
   [--governs "<artifact path>"] [--packet "<ADR-016 packet path>"] \
-  [--deps "blocked-by:<id>,discovered-from:<id>"] [--parent "<parent id>"] \
+  [--deps "blocked-by:<blocker id>[,discovered-from:<origin id>]"] [--parent "<parent id>"] \
   [--key "<stable idempotency key>"] [--label "<extra label>"]... \
   [--migrated-from "<legacy record>"]... \
   --by "<your session id>"
@@ -111,7 +111,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/create-beads-batch.sh --artifact <path> [--dry-run
 Batch-level `project` is required, once for the whole artifact. Per unit: `key` (the idempotency
 key), `title`, `description`, `acceptance`, `accept`, `type`, `labels`, `tier`/`effort`, `class`,
 `budget`, `parent` (a sibling key or an existing id), `deps` (`blocked-by:<key|id>`,
-`discovered-from:<id>`). Batch-level `labels`, `class`, `budget` apply to every unit unless a unit
+`discovered-from:<id>`; one edge type per target, so a unit may not list the same key/id under both `blocked-by` and `discovered-from`). Batch-level `labels`, `class`, `budget` apply to every unit unless a unit
 overrides them. Sibling keys resolve in dependency order; a parent may be a sibling in the same
 batch. Rerunning on the same artifact creates only new keys; an existing key whose fields drifted
 prints `EXISTS: <id>` plus a one-line diff hint and is never updated in place. One `key id` line per
@@ -136,7 +136,7 @@ Brief it with one paragraph plus your session id:
 | `tier:` (+ `effort:`) | when not the default tier for the class | you never set a tier to admit yourself |
 | `class:` / `budget:` | when not the default | otherwise the agent's create call omits both and takes the script's defaults |
 | `governs`, `packet` | when applicable | the executed artifact; the ADR-016 packet for a decision Bead |
-| Deps | when real blocking facts exist | `blocked-by:<id>`, `discovered-from:<id>`; never lineage or chronology |
+| Deps | when real blocking facts exist | `blocked-by:<id>`, `discovered-from:<id>`; never lineage or chronology; one edge type per target |
 | Parent | optional | the agent always disables label inheritance |
 | `migrated-from` | migrations only | one entry per legacy record replaced |
 | Your session id | always | so the agent can open the scoped transcript window |
