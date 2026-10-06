@@ -99,6 +99,7 @@ if [[ -n "$deps" ]]; then
     __e="${__e#"${__e%%[![:space:]]*}"}"; __e="${__e%"${__e##*[![:space:]]}"}"
     [[ -n "$__e" ]] || continue
     if [[ "$__e" == *:* ]]; then __t="${__e%%:*}"; __id="${__e#*:}"; else __t="blocked-by"; __id="$__e"; fi
+    [[ -n "$__t" ]] || die "--deps entry '$__e' has no edge type. Use 'blocked-by:<id>' or 'discovered-from:<id>', then re-run."
     [[ -n "$__id" ]] || die "--deps entry '$__e' has no id. Use 'blocked-by:<id>' or 'discovered-from:<id>', then re-run."
     case "$__t" in blocked-by|depends-on) __n="blocks" ;; *) __n="$__t" ;; esac
     if [[ -n "${__dep_type_for[$__id]:-}" && "${__dep_type_for[$__id]}" != "$__n" ]]; then
@@ -182,13 +183,14 @@ cmd=(bd create "$title" --type "$btype" --description "$description"
 [[ -n "$parent"  ]] && cmd+=(--parent "$parent" --no-inherit-labels)
 
 err_file="/tmp/create-bead.$$.err"
+# No EXIT trap exists earlier in this script; this is the only one.
+trap 'rm -f "$err_file"' EXIT
 if ! created="$("${cmd[@]}" 2>"$err_file")"; then
   # bd --json puts its error JSON on stdout, not stderr: relay it first, then any stderr.
   bd_err="$(printf '%s' "$created" | jq -r '.error // empty' 2>/dev/null || true)"
   [[ -n "$bd_err" ]] || bd_err="$created"
   printf '%s: bd create failed: %s\n' "$SELF" "${bd_err:-<bd printed no error text>}" >&2
-  if [[ -s "$err_file" ]]; then cat "$err_file" >&2; fi
-  rm -f "$err_file"
+  if [[ -s "$err_file" ]]; then cat "$err_file" >&2 || true; fi
   case "$bd_err" in
     *"no issue found matching"*)
       die "a --deps target does not exist in this database. Check the id with 'bd show <id>' (database: \$BEADS_DIR=$BEADS_DIR), correct --deps, then re-run; no Bead was created." ;;
@@ -200,7 +202,6 @@ if ! created="$("${cmd[@]}" 2>"$err_file")"; then
       die "fix the cause bd reported above, then re-run; no Bead was created." ;;
   esac
 fi
-rm -f "$err_file"
 
 id="$(printf '%s' "$created" | jq -r '.id // empty')"
 [[ -n "$id" ]] || die "bd create returned no id. Run 'bd list --json' to check whether a Bead landed before re-running."

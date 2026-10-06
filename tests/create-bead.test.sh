@@ -170,13 +170,38 @@ assert_contains "missing --deps target remedy names 'bd show'" "$out" "bd show"
 
 # 2. same target, two edge types: refused before bd, no Bead created
 n0="$(bd list --json --limit 0 2>/dev/null | jq length)"
+# Spy bd first on PATH for this one invocation: logs its args, then execs the real bd.
+real_bd="$(command -v bd)"
+spy_dir="$scratch/spy-bin"; spy_log="$scratch/spy-bd.log"
+mkdir -p "$spy_dir"; : >"$spy_log"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"%s"\nexec "%s" "$@"\n' "$spy_log" "$real_bd" >"$spy_dir/bd"
+chmod +x "$spy_dir/bd"
+orig_path="$PATH"
+PATH="$spy_dir:$PATH"
 out="$(scripts/create-bead.sh --title "DepSameTarget" "${CB_COMMON[@]}" --deps "blocked-by:$a,discovered-from:$a" 2>&1)"; rc=$?
+PATH="$orig_path"
 n1="$(bd list --json --limit 0 2>/dev/null | jq length)"
+[[ "$n0" =~ ^[0-9]+$ && "$n1" =~ ^[0-9]+$ ]] \
+  && eb_ok "same-target Bead counts are non-empty integers" \
+  || eb_bad "same-target Bead counts are non-empty integers" "before='$n0' after='$n1'"
+creates="$(awk '$1 == "create"' "$spy_log" | wc -l)"
+assert_eq "same-target refusal never reaches 'bd create'" "0" "${creates//[[:space:]]/}"
 assert_rc "same target with two edge types exits 1" 1 "$rc"
 assert_contains "same-target refusal says 'two edge types'" "$out" "two edge types"
 assert_contains "same-target refusal keeps the typed word blocked-by" "$out" "blocked-by:$a"
 assert_contains "same-target refusal names discovered-from" "$out" "discovered-from"
 assert_eq "same-target refusal creates no Bead" "$n0" "$n1"
+
+# 2b. empty edge type (':<id>') is refused before bd, no Bead created
+n0="$(bd list --json --limit 0 2>/dev/null | jq length)"
+out="$(scripts/create-bead.sh --title "DepEmptyType" "${CB_COMMON[@]}" --deps ":$a" 2>&1)"; rc=$?
+n1="$(bd list --json --limit 0 2>/dev/null | jq length)"
+[[ "$n0" =~ ^[0-9]+$ && "$n1" =~ ^[0-9]+$ ]] \
+  && eb_ok "empty-type Bead counts are non-empty integers" \
+  || eb_bad "empty-type Bead counts are non-empty integers" "before='$n0' after='$n1'"
+assert_rc "empty edge type exits 1" 1 "$rc"
+assert_contains "empty edge type refusal says 'has no edge type'" "$out" "has no edge type"
+assert_eq "empty edge type creates no Bead" "$n0" "$n1"
 
 # 3. distinct targets with two edge types succeed
 n0="$(bd list --json --limit 0 2>/dev/null | jq length)"

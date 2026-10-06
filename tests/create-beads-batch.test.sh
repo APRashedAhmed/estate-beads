@@ -156,6 +156,9 @@ EOF
 n_before_samedep="$(bd list --json --limit 0 | jq 'length')"
 samedep_err="$(scripts/create-beads-batch.sh --artifact "$samedep_artifact" 2>&1 >/dev/null)"; samedep_rc=$?
 n_after_samedep="$(bd list --json --limit 0 | jq 'length')"
+[[ "$n_before_samedep" =~ ^[0-9]+$ && "$n_after_samedep" =~ ^[0-9]+$ ]] \
+  && eb_ok "same-key Bead counts are non-empty integers" \
+  || eb_bad "same-key Bead counts are non-empty integers" "before='$n_before_samedep' after='$n_after_samedep'"
 assert_rc "same-key two-edge-type unit exits 1" 1 "$samedep_rc"
 assert_contains "same-key refusal names the unit key" "$samedep_err" "unit 'k2'"
 assert_contains "same-key refusal names the target k1" "$samedep_err" "'k1'"
