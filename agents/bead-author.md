@@ -88,7 +88,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/create-bead.sh \
   [--class "<bounded-increment|hardened>"] [--budget "cycles=<n>"] \
   [--workunit "<$SEAT_ROOT/PerAnkh/projects/<project>/workunits/<date>-<slug>/>"] \
   [--governs "<artifact path>"] [--packet "<ADR-016 packet path>"] \
-  [--deps "blocked-by:<id>,discovered-from:<id>"] [--parent "<parent id>"] \
+  [--deps "blocked-by:<blocker id>[,discovered-from:<origin id>]"] [--parent "<parent id>"] \
   [--migrated-from "<legacy record>"]... \
   --by "<your caller's session id>"
 ```
