@@ -142,4 +142,16 @@ case "$broken" in
   *) eb_ok "a broken database does not say Confirm the id" ;;
 esac
 
+# --- step 5 (pa-q1w0): close fails AND the notes restore fails -> RESTORE-FAILED naming the id --------
+# A PATH wrapper over the real (scratch) bd: `close` always fails; once it has, `--notes` restores fail too.
+idr="$(make_pending "Evi-restore-fail" evidence)"
+rwrap="$scratch/rwrap"; mkdir -p "$rwrap"
+printf '#!/usr/bin/env bash\nif [[ "$1" == close ]]; then : >"%s/closed"; printf "Error: close boom\\n" >&2; exit 1; fi\nif [[ -e "%s/closed" && "$*" == *" --notes "* ]]; then printf "Error: restore boom\\n" >&2; exit 1; fi\nexec "%s" "$@"\n' \
+  "$rwrap" "$rwrap" "$(command -v bd)" >|"$rwrap/bd"
+chmod +x "$rwrap/bd"
+out="$(PATH="$rwrap:$PATH" scripts/bead-accept.sh --id "$idr" --evidence "$scratch/e.txt" 2>&1)"; rc=$?
+assert_contains "a failed notes restore prints RESTORE-FAILED" "$out" "RESTORE-FAILED"
+assert_contains "RESTORE-FAILED names the Bead id" "$out" "RESTORE-FAILED $idr:"
+assert_rc "the exit code stays 1 on a failed close" 1 "$rc"
+
 eb_report

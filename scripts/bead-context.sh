@@ -5,6 +5,10 @@
 # the beads.role warning so it never lands in context).
 set -u
 
+SELF="bead-context"
+# shellcheck source=lib/eb-common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/eb-common.sh"
+
 if [[ -z "${BEADS_DIR:-}" ]]; then
   printf 'database: none ($BEADS_DIR unset)\n'
   exit 0
@@ -29,7 +33,11 @@ if [[ -z "$actor" ]]; then
   exit 0
 fi
 
-json="$(bd list --assignee "$actor" --json 2>/dev/null || true)"
+if ! eb_bd json list --assignee "$actor" --json 2>/dev/null; then
+  # A failed list is not "none claimed": say it is unknown, with the tracker's own error.
+  printf 'claimed: unknown (bd list failed: %s)\n' "${EB_BD_ERROR:-<unknown>}"
+  exit 0
+fi
 if [[ -z "$json" ]]; then
   printf 'claimed: none\n'
   exit 0

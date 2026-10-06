@@ -45,6 +45,11 @@ bead_json() {  # <id> <out-var> -> the bead object in out-var; rc 1 on failure, 
   printf -v "$2" '%s' "$b"
 }
 
+restore_failed() {  # <id> <what-failed> <evidence-line>: report a failed notes restore; the caller still dies as before
+  printf 'RESTORE-FAILED %s: %s. Check %s'"'"'s notes for a dangling "%s" line; if present, remove it by hand: bd update %s --notes "<notes without that line>".\n' \
+    "$1" "$2" "$1" "$3" "$1" >&2
+}
+
 release_and_halt() {  # <id> <halt-label> <next-line>
   local id="$1" label="$2" next="$3"
   bd update "$id" --status open --assignee "" >/dev/null \
@@ -77,9 +82,10 @@ release_and_halt() {  # <id> <halt-label> <next-line>
 # that one line, parenthetically, rather than as its own "closed by ..." line.
 eb_close_or_restore() {  # <id> <orig-notes> <evidence-line> <close-reason> <retry-hint>
   local id="$1" orig_notes="$2" evidence_line="$3" close_reason="$4" retry_hint="$5"
-  local assignee actor close_args=(--reason "$close_reason")
+  local assignee actor raw close_args=(--reason "$close_reason")
 
-  assignee="$(bd show --json "$id" 2>/dev/null | jq -r '.[0].assignee // ""')"
+  eb_bd raw show --json "$id" || die "$(eb_show_remedy "$id")"
+  assignee="$(printf '%s' "$raw" | jq -r '.[0].assignee // ""')"
   actor="${BEADS_ACTOR:-}"
   if [[ -n "$assignee" && "$assignee" != "$actor" ]]; then
     close_args+=(--force)
@@ -89,14 +95,17 @@ eb_close_or_restore() {  # <id> <orig-notes> <evidence-line> <close-reason> <ret
   bd update "$id" --append-notes "$evidence_line" >/dev/null \
     || die "'bd update $id --append-notes' failed. Fix the reported cause and re-run; nothing was changed."
   "$SCRIPT_DIR/bead-progress.sh" --id "$id" --preserve --in-progress "none" --next "none — closed" || {
-    bd update "$id" --notes "$orig_notes" >/dev/null 2>&1
+    bd update "$id" --notes "$orig_notes" >/dev/null 2>&1 \
+      || restore_failed "$id" "the rule-5 NEXT rewrite failed AND restoring the prior notes also failed" "$evidence_line"
     die "the rule-5 NEXT rewrite failed; restored the prior notes (the EVIDENCE append is undone too). Fix the reported cause, then re-run: $retry_hint"
   }
   bd update "$id" --remove-label "acceptance-pending" >/dev/null \
     || die "the evidence line landed but removing 'acceptance-pending' failed. Run: bd update $id --remove-label acceptance-pending"
   if ! bd close "$id" "${close_args[@]}" >/dev/null; then
-    bd update "$id" --add-label "acceptance-pending" >/dev/null 2>&1
-    bd update "$id" --notes "$orig_notes" >/dev/null 2>&1
+    bd update "$id" --add-label "acceptance-pending" >/dev/null 2>&1 \
+      || printf 'RESTORE-FAILED %s: bd close failed AND re-adding acceptance-pending also failed. Run by hand: bd update %s --add-label acceptance-pending\n' "$id" "$id" >&2
+    bd update "$id" --notes "$orig_notes" >/dev/null 2>&1 \
+      || restore_failed "$id" "bd close failed AND restoring the prior notes also failed" "$evidence_line"
     die "the label was removed but 'bd close' failed; restored 'acceptance-pending' and the prior notes. Fix the reported cause, then re-run: $retry_hint"
   fi
 }

@@ -126,4 +126,15 @@ PATH="$wrapdir:$PATH" scripts/bead-claim.sh --id "$idw" --model opus >/dev/null
 assert_eq "a no-effort re-claim issues exactly one 'update --metadata' call" "1" "$(grep -cE '^update .*--metadata' "$bdlog")"
 assert_eq "the no-effort re-claim leaves no executor.effort" "none" "$(effort_of "$idw")"
 
+# --- step 7 (pa-q1w0): a wrong-actor refusal is an error with the tracker's text, never LOST -----------
+# A fake tracker prints the refusal text bd gives when the Bead is held by another actor (a real one
+# cannot be produced with the scratch database).
+wafake="$scratch/wafake"; mkdir -p "$wafake"
+printf '#!/usr/bin/env bash\nprintf "Error updating X: cannot reassign X: held by \\"other\\" (in_progress)\\n" >&2\nexit 1\n' >|"$wafake/bd"
+chmod +x "$wafake/bd"
+out="$(PATH="$wafake:$PATH" scripts/bead-claim.sh --id X --model sonnet 2>&1)"; rc=$?
+assert_ne "a wrong-actor refusal is not reported as LOST" "LOST" "${out%%$'\n'*}"
+assert_contains "the wrong-actor refusal shows the tracker's text" "$out" 'held by "other" (in_progress)'
+assert_eq "the wrong-actor refusal exits non-zero" "1" "$rc"
+
 eb_report

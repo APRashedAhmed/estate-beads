@@ -63,7 +63,7 @@ fi
 
 # A lost race is non-zero. Distinguish it from a real error so the caller does not
 # treat a broken database as a lost race.
-if printf '%s' "$out" | grep -qiE 'claim|assigned|in.progress|already'; then
+if printf '%s' "$out" | grep -qiE 'already claimed|already assigned'; then
   printf 'LOST\n'
   exit 0
 fi
