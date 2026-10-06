@@ -16,7 +16,9 @@ source "$ROOT/tests/_assert.sh"
 SCRATCH_ROOT_DIR="$(mktemp -d)"
 export EB_SCRATCH_ROOT="$SCRATCH_ROOT_DIR"
 unset CLAUDE_CODE_SESSION_ID
-trap 'rm -rf "$SCRATCH_ROOT_DIR"' EXIT
+ERR_FILE="$(mktemp)"
+FAKE_BIN=""
+trap 'rm -rf "$SCRATCH_ROOT_DIR" "$ERR_FILE" "$FAKE_BIN"' EXIT
 
 MARKER_NAME=".estate-beads-scratch"
 
@@ -51,11 +53,11 @@ LIST_OUT="$(BEADS_DIR="$BEADS_DIR_1" bd list --json 2>/dev/null)"
 assert_eq "new: the database is usable (bd list --json returns an empty array)" "[]" "$LIST_OUT"
 
 # --- 2. `rm`: deletes a legitimate scratch folder (given any path under it) ----------------------
-bash "$SCRATCH" rm "$BEADS_DIR_1" >/dev/null 2>&1
+ERR_RM1="$(bash "$SCRATCH" rm "$BEADS_DIR_1" 2>&1 >/dev/null)"
 RC_RM1=$?
 assert_rc "rm: a legitimate marked folder is accepted (exit 0)" 0 "$RC_RM1"
 if [[ -e "$FOLDER_1" ]]; then
-  eb_bad "rm: the folder is actually gone afterward" "still exists: $FOLDER_1"
+  eb_bad "rm: the folder is actually gone afterward" "still exists: $FOLDER_1" "rc=$RC_RM1 stderr: $ERR_RM1"
 else
   eb_ok "rm: the folder is actually gone afterward"
 fi
@@ -91,8 +93,9 @@ RUN_OUT="$(bash "$SCRATCH" run -- bash -c '
   echo "BEADS_DIR=$BEADS_DIR"
   bd create "scratch run test" --type task -p 2 --json >/dev/null
   bd list --json
-')"
+' 2>"$ERR_FILE")"
 RC_RUN_OK=$?
+ERR_RUN_OK="$(cat "$ERR_FILE")"
 assert_rc "run (success): the wrapped command exits 0" 0 "$RC_RUN_OK"
 assert_contains "run (success): BEADS_DIR was exported to the command" "$RUN_OUT" "BEADS_DIR="
 assert_contains "run (success): the command could actually use bd against it" "$RUN_OUT" "scratch run test"
@@ -100,11 +103,12 @@ LEFTOVER_AFTER_SUCCESS=("$SCRATCH_ROOT_DIR"/*/)
 if [[ "${#LEFTOVER_AFTER_SUCCESS[@]}" -eq 0 ]]; then
   eb_ok "run (success): the scratch folder is deleted on exit"
 else
-  eb_bad "run (success): the scratch folder is deleted on exit" "left over: ${LEFTOVER_AFTER_SUCCESS[*]}"
+  eb_bad "run (success): the scratch folder is deleted on exit" "left over: ${LEFTOVER_AFTER_SUCCESS[*]}" \
+    "rc=$RC_RUN_OK stderr: $ERR_RUN_OK"
 fi
 
 # --- 6. `run -- <cmd>`: deletes on FAILURE too, and propagates the command's own exit code -------
-bash "$SCRATCH" run -- bash -c 'exit 37' >/dev/null 2>&1
+ERR_RUN_FAIL="$(bash "$SCRATCH" run -- bash -c 'exit 37' 2>&1 >/dev/null)"
 RC_RUN_FAIL=$?
 assert_rc "run (failure): the wrapped command's exit code is propagated" 37 "$RC_RUN_FAIL"
 LEFTOVER_AFTER_FAIL=("$SCRATCH_ROOT_DIR"/*/)
@@ -112,7 +116,7 @@ if [[ "${#LEFTOVER_AFTER_FAIL[@]}" -eq 0 ]]; then
   eb_ok "run (failure): the scratch folder is STILL deleted on a failing command"
 else
   eb_bad "run (failure): the scratch folder is STILL deleted on a failing command" \
-    "left over: ${LEFTOVER_AFTER_FAIL[*]}"
+    "left over: ${LEFTOVER_AFTER_FAIL[*]}" "rc=$RC_RUN_FAIL stderr: $ERR_RUN_FAIL"
 fi
 
 # --- 7. a `bd serve`-shaped process mentioning the scratch folder is stopped on cleanup ----------
@@ -145,10 +149,12 @@ UNMARKED_SE="$SCRATCH_ROOT_DIR/unmarked-sessionend"
 mkdir -p "$UNMARKED_SE"
 
 sessionend_payload() { printf '{"session_id":"%s","hook_event_name":"SessionEnd"}' "$1"; }
-env -u BEADS_DIR bash "$END" <<<"$(sessionend_payload "$SID_A")" >/dev/null 2>&1
+ERR_END="$(env -u BEADS_DIR bash "$END" <<<"$(sessionend_payload "$SID_A")" 2>&1 >/dev/null)"
+RC_END=$?
 
 if [[ -d "$FOLDER_A" ]]; then
-  eb_bad "SessionEnd: deletes the ending session's own marked folder" "still exists: $FOLDER_A"
+  eb_bad "SessionEnd: deletes the ending session's own marked folder" "still exists: $FOLDER_A" \
+    "rc=$RC_END stderr: $ERR_END"
 else
   eb_ok "SessionEnd: deletes the ending session's own marked folder"
 fi
@@ -175,10 +181,12 @@ mkdir -p "$UNMARKED_SS"
 
 sessionstart_payload() { printf '{"session_id":"%s","source":"startup","hook_event_name":"SessionStart"}' "$1"; }
 SID_SWEEPER="55555555-5555-5555-5555-555555555555"
-env -u BEADS_DIR bash "$START" <<<"$(sessionstart_payload "$SID_SWEEPER")" >/dev/null 2>&1
+ERR_START="$(env -u BEADS_DIR bash "$START" <<<"$(sessionstart_payload "$SID_SWEEPER")" 2>&1 >/dev/null)"
+RC_START=$?
 
 if [[ -d "$OLD_FOLDER" ]]; then
-  eb_bad "SessionStart: the 24h sweep deletes a stale (>24h) marked folder" "still exists: $OLD_FOLDER"
+  eb_bad "SessionStart: the 24h sweep deletes a stale (>24h) marked folder" "still exists: $OLD_FOLDER" \
+    "rc=$RC_START stderr: $ERR_START"
 else
   eb_ok "SessionStart: the 24h sweep deletes a stale (>24h) marked folder"
 fi
@@ -208,9 +216,9 @@ else
   eb_bad "new: works from a cwd that IS inside a git repository (the cwd-pinned-agent case)" \
     "no database at: $BEADS_DIR_PINNED"
 fi
-bash "$SCRATCH" rm "$BEADS_DIR_PINNED" >/dev/null 2>&1
+ERR_RM_PINNED="$(bash "$SCRATCH" rm "$BEADS_DIR_PINNED" 2>&1 >/dev/null)"
 RC_RM_PINNED=$?
-assert_rc "rm: works from a cwd-pinned caller too" 0 "$RC_RM_PINNED"
+assert_eq "rm: works from a cwd-pinned caller too" "0|" "$RC_RM_PINNED|$ERR_RM_PINNED"
 
 # `run` too, from the same cwd-pinned caller — and the folder must land under the scratch root,
 # NOT under the git cwd, proving the fixed root (not cwd) is what makes this reachable at all.
@@ -222,5 +230,46 @@ case "$RUN_PINNED_OUT" in
   *) eb_bad "run (cwd-pinned): the database lands under the scratch root, not the git cwd" "got: $RUN_PINNED_OUT" ;;
 esac
 rm -rf "$GIT_CWD"
+
+# --- 11. a FAILED removal is visible: fake `rm` first on PATH, for the script call only ----------
+# BOOM: writes to stderr, exits 1. NOOP: exits 0 and deletes nothing (the "still exists" case).
+FAKE_BIN="$(mktemp -d)"
+mkdir -p "$FAKE_BIN/boom" "$FAKE_BIN/noop"
+printf '#!/bin/sh\necho "fake-rm: boom" >&2\nexit 1\n' > "$FAKE_BIN/boom/rm"
+printf '#!/bin/sh\nexit 0\n' > "$FAKE_BIN/noop/rm"
+chmod +x "$FAKE_BIN/boom/rm" "$FAKE_BIN/noop/rm"
+
+for MODE in boom noop; do
+  if [[ "$MODE" == boom ]]; then WANT="could not remove"; else WANT="still exists"; fi
+
+  # rm: nonzero exit, message names the folder, the rc and (boom) rm's own error / (noop) "still exists"
+  FOLDER_F="$SCRATCH_ROOT_DIR/sessF-$MODE"
+  write_marker "$FOLDER_F" "sessF" "$(date +%s)"
+  ERR_F="$(PATH="$FAKE_BIN/$MODE:$PATH" bash "$SCRATCH" rm "$FOLDER_F" 2>&1 >/dev/null)"
+  RC_F=$?
+  assert_eq "rm ($MODE): a failed removal returns 1" "1" "$RC_F"
+  assert_contains "rm ($MODE): stderr names the folder" "$ERR_F" "could not remove $FOLDER_F "
+  assert_contains "rm ($MODE): stderr carries the rm status" "$ERR_F" "(rc=$([[ $MODE == boom ]] && echo 1 || echo 0))"
+  assert_contains "rm ($MODE): stderr carries the reason" "$ERR_F" "$([[ $MODE == boom ]] && echo 'fake-rm: boom' || echo 'still exists')"
+  assert_contains "rm ($MODE): stderr says $WANT" "$ERR_F" "$WANT"
+  rm -rf "$FOLDER_F"
+
+  # run: the wrapped command's exit code (37, and 0) survives a failed removal; the failure is reported
+  for WRAPPED in 37 0; do
+    ERR_F="$(PATH="$FAKE_BIN/$MODE:$PATH" bash "$SCRATCH" run -- bash -c "exit $WRAPPED" 2>&1 >/dev/null)"
+    RC_F=$?
+    LEFT_F=("$SCRATCH_ROOT_DIR"/*/)
+    assert_eq "run ($MODE, cmd exit $WRAPPED): the wrapped command's exit code is kept" "$WRAPPED" "$RC_F"
+    assert_eq "run ($MODE, cmd exit $WRAPPED): the folder is left behind" "1" "${#LEFT_F[@]}"
+    assert_contains "run ($MODE, cmd exit $WRAPPED): stderr names the folder" "$ERR_F" \
+      "could not remove ${LEFT_F[0]%/} "
+    assert_contains "run ($MODE, cmd exit $WRAPPED): stderr carries the rm status" "$ERR_F" \
+      "(rc=$([[ $MODE == boom ]] && echo 1 || echo 0))"
+    assert_contains "run ($MODE, cmd exit $WRAPPED): stderr carries the reason" "$ERR_F" \
+      "$([[ $MODE == boom ]] && echo 'fake-rm: boom' || echo 'still exists')"
+    rm -rf "${LEFT_F[@]}"
+  done
+done
+rm -rf "$FAKE_BIN"
 
 eb_report

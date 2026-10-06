@@ -186,6 +186,22 @@ _init_in() {
   ) >/dev/null 2>&1
 }
 
+# _remove_dir DIR — rm -rf DIR and make a failed removal visible: if rm fails, or exits 0 but the
+# folder is still there, print one line to stderr and return 1.
+_remove_dir() {
+  local dir="$1" err rc
+  err="$(rm -rf "$dir" 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "bead-scratch.sh: could not remove $dir (rc=$rc): $err" >&2
+    return 1
+  fi
+  if [ -e "$dir" ]; then
+    echo "bead-scratch.sh: could not remove $dir (rc=0): still exists${err:+: $err}" >&2
+    return 1
+  fi
+  return 0
+}
+
 _new_folder() {  # prints the new folder's absolute path on stdout; returns 1 on mktemp failure
   mkdir -p "$ROOT"
   local sid dir
@@ -206,7 +222,7 @@ cmd_new() {
   local dir
   dir="$(_new_folder)" || { echo "bead-scratch.sh: mktemp failed" >&2; return 1; }
   if ! _init_in "$dir" "$prefix"; then
-    rm -rf "$dir"
+    _remove_dir "$dir" || true
     echo "bead-scratch.sh: bd init failed — refusing to leave a half-initialized scratch dir" >&2
     return 1
   fi
@@ -222,7 +238,7 @@ cmd_rm() {
     return 1
   fi
   _stop_server_for "$marked"
-  rm -rf "$marked"
+  _remove_dir "$marked"
 }
 
 cmd_run() {
@@ -236,7 +252,7 @@ cmd_run() {
   local dir
   dir="$(_new_folder)" || { echo "bead-scratch.sh: mktemp failed" >&2; return 1; }
   if ! _init_in "$dir"; then
-    rm -rf "$dir"
+    _remove_dir "$dir" || true
     echo "bead-scratch.sh: bd init failed — refusing to run against a half-initialized scratch dir" >&2
     return 1
   fi
@@ -247,7 +263,7 @@ cmd_run() {
   trap '
     ec=$?
     _stop_server_for "'"$dir"'"
-    rm -rf "'"$dir"'"
+    _remove_dir "'"$dir"'" || true
     exit "$ec"
   ' EXIT
 
@@ -263,7 +279,7 @@ cmd_sweep_session() {
     [ -d "$d" ] || continue
     [ -f "$d/$MARKER_NAME" ] || continue
     _stop_server_for "$d"
-    rm -rf "$d"
+    _remove_dir "$d" || true
   done
   return 0
 }
@@ -282,7 +298,7 @@ cmd_sweep_stale() {
     age=$(( now - created ))
     if [ "$age" -ge "$cutoff_s" ]; then
       _stop_server_for "$d"
-      rm -rf "$d"
+      _remove_dir "$d" || true
     fi
   done
   return 0
