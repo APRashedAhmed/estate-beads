@@ -165,4 +165,63 @@ assert_contains "same-key refusal names the target k1" "$samedep_err" "'k1'"
 assert_contains "same-key refusal says two edge types" "$samedep_err" "two edge types"
 assert_eq "same-key refusal creates zero Beads" "$n_before_samedep" "$n_after_samedep"
 
+# --- a broken database is reported as such, not as a bad artifact reference ------------------------
+# Fault injector: BEADS_DIR at an existing empty directory (no database): every bd call fails with
+# `no beads database found` on stderr.
+empty_db="$(mktemp -d)"
+extdb_artifact="$scratch/plan-extdb.md"
+cat > "$extdb_artifact" <<'EOF'
+```yaml
+project: sample-proj
+units:
+  - key: ext-a
+    title: "Ext A"
+    description: "Depends on an external Bead."
+    acceptance: "A lands."
+    accept: evidence
+    deps:
+      - "blocked-by:zz-999"
+```
+EOF
+extdb_out="$(BEADS_DIR="$empty_db" scripts/create-beads-batch.sh --artifact "$extdb_artifact" 2>&1)"; extdb_rc=$?
+assert_rc "external-ref check on a broken database exits 1" 1 "$extdb_rc"
+assert_contains "external-ref check names the real cause" "$extdb_out" "no beads database found"
+case "$extdb_out" in
+  *"Fix the artifact"*) eb_bad "a database failure does not tell the user to fix the artifact" "$extdb_out" ;;
+  *) eb_ok "a database failure does not tell the user to fix the artifact" ;;
+esac
+# ...while a genuinely missing external id still does
+extmiss_out="$(scripts/create-beads-batch.sh --artifact "$extdb_artifact" 2>&1)"; extmiss_rc=$?
+assert_rc "a missing external id still exits 1" 1 "$extmiss_rc"
+assert_contains "a missing external id still says Fix the artifact" "$extmiss_out" "Fix the artifact"
+
+# --- a list failure stops the batch; it does not fall through to per-unit create-bead.sh calls ------
+# (two keyed units, so a fall-through would repeat the diagnostic once per unit)
+listfail_artifact="$scratch/plan-listfail.md"
+cat > "$listfail_artifact" <<'EOF'
+```yaml
+project: sample-proj
+units:
+  - key: lf-a
+    title: "LF A"
+    description: "First."
+    acceptance: "A lands."
+    accept: evidence
+  - key: lf-b
+    title: "LF B"
+    description: "Second."
+    acceptance: "B lands."
+    accept: evidence
+```
+EOF
+lf_out="$(BEADS_DIR="$empty_db" scripts/create-beads-batch.sh --artifact "$listfail_artifact" 2>&1)"; lf_rc=$?
+rmdir "$empty_db"
+assert_rc "a list failure exits 1" 1 "$lf_rc"
+assert_contains "the list failure names the list call and the cause" "$lf_out" "bd list failed: no beads database found"
+assert_eq "the list diagnostic appears once, not once per unit" "1" "$(printf '%s\n' "$lf_out" | grep -c 'bd list failed')"
+case "$lf_out" in
+  *"create-bead:"*) eb_bad "no create-bead.sh call ran after the list failure" "$lf_out" ;;
+  *) eb_ok "no create-bead.sh call ran after the list failure" ;;
+esac
+
 eb_report

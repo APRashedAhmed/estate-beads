@@ -133,8 +133,12 @@ fi
 # does not trip it), else on an exact --title match. --force skips this entirely.
 if [[ "$force" -ne 1 ]]; then
   existing_id=""
-  list_json="$(bd list --json --status open,in_progress,blocked --limit 0 2>/dev/null)" \
-    || die "'bd list --json' failed while running the idempotency guard. Fix the reported cause, then re-run; no Bead was created."
+  # The guard's stderr is shown only on failure: a bd warning on a successful list must not
+  # precede the create call's own output (a warning never stands alone, nor comes first).
+  guard_err="$(mktemp)"
+  eb_bd list_json list --json --status open,in_progress,blocked --limit 0 2>"$guard_err" \
+    || { cat "$guard_err" >&2; rm -f "$guard_err"; die "the idempotency guard could not list existing Beads (cause above). Fix it, then re-run; no Bead was created."; }
+  rm -f "$guard_err"
   # --key is the first idempotency match (decision 11/design §12.2); falls back to
   # --migrated-from, then the exact --title match, in that order.
   if [[ -n "$key" ]]; then
@@ -186,15 +190,10 @@ cmd=(bd create "$title" --type "$btype" --description "$description"
 # yielding two acceptance authorities on one Bead. Always disable inheritance.
 [[ -n "$parent"  ]] && cmd+=(--parent "$parent" --no-inherit-labels)
 
-err_file="/tmp/create-bead.$$.err"
-# No EXIT trap exists earlier in this script; this is the only one.
-trap 'rm -f "$err_file"' EXIT
-if ! created="$("${cmd[@]}" 2>"$err_file")"; then
-  # bd --json puts its error JSON on stdout, not stderr: relay it first, then any stderr.
-  bd_err="$(printf '%s' "$created" | jq -r '.error // empty' 2>/dev/null || true)"
-  [[ -n "$bd_err" ]] || bd_err="$created"
-  printf '%s: bd create failed: %s\n' "$SELF" "${bd_err:-<bd printed no error text>}" >&2
-  if [[ -s "$err_file" ]]; then cat "$err_file" >&2 || true; fi
+if ! eb_bd created "${cmd[@]:1}"; then
+  # eb_bd reads both streams (bd --json puts this error on stdout) and has already printed
+  # "create-bead: bd create failed: <error>" then any other stderr; pick the remedy from the error.
+  bd_err="$EB_BD_ERROR"
   case "$bd_err" in
     *"no issue found matching"*)
       die "a --deps target does not exist in this database. Check the id with 'bd show <id>' (database: \$BEADS_DIR=$BEADS_DIR), correct --deps, then re-run; no Bead was created." ;;

@@ -323,5 +323,52 @@ fi
 OUT_END_NODB="$(env -u BEADS_DIR bash "$END" <<<"$(sessionend_payload "cccccccc-cccc-cccc-cccc-cccccccccccc")" 2>&1)"
 assert_eq "SessionEnd: silent (no stdout) when no db" "" "$OUT_END_NODB"
 
+# --- 7. SessionEnd on a write failure: a diagnostic on stderr, and the hook STILL exits 0 -------------
+# Fault injector: the scratch database is made read-only after the claim lands (restored below).
+scratch7=""; eb_scratch_db scratch7
+SID7="sess-1"
+BEAD7="$(BEADS_ACTOR=creator bd create "write-fail test" --type task -p 2 --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+BEADS_ACTOR="$SID7" bd update "$BEAD7" --claim --json >/dev/null
+chmod -R a-w "$BEADS_DIR"
+ERR7="$(bash "$END" <<<"$(sessionend_payload "$SID7")" 2>&1 >/dev/null)"; RC7=$?
+chmod -R u+w "$BEADS_DIR"
+assert_rc "SessionEnd: exits 0 even when the release write fails" 0 "$RC7"
+case "$ERR7" in
+  *"permission denied"*|*"failed to open database"*) eb_ok "SessionEnd: a write failure prints the cause on stderr" ;;
+  *) eb_bad "SessionEnd: a write failure prints the cause on stderr" "stderr: $ERR7" ;;
+esac
+assert_contains "SessionEnd: the diagnostic names the hook and the call that failed" "$ERR7" "eb-session-end: bd list failed:"
+assert_eq "SessionEnd: the claim stays in_progress after the failed release" "in_progress" \
+  "$(bd show --json "$BEAD7" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["status"])')"
+# A list failure (database unreachable) is also reported, and also exits 0.
+EMPTY7="$(mktemp -d)"
+ERR7L="$(BEADS_DIR="$EMPTY7" bash "$END" <<<"$(sessionend_payload "$SID7")" 2>&1 >/dev/null)"; RC7L=$?
+assert_rc "SessionEnd: exits 0 when the list fails" 0 "$RC7L"
+assert_contains "SessionEnd: a list failure prints the cause on stderr" "$ERR7L" "eb-session-end: bd list failed: no beads database found"
+ERR7S="$(BEADS_DIR="$EMPTY7" bash "$START" <<<"$(sessionstart_payload "$SID7")" 2>&1 >/dev/null)"; RC7S=$?
+rmdir "$EMPTY7"
+assert_rc "SessionStart: exits 0 when the database is unreachable" 0 "$RC7S"
+rm -rf "$scratch7"
+
+# A read-only database fails the list before any update, so the batched release (and the phase-2
+# release note) are exercised through a PATH shim `bd`: the list finds the claim, every write fails
+# with the per-issue envelope on stderr (the shape measured on bd 1.3.0).
+SHIM7="$(mktemp -d)"
+cat > "$SHIM7/bd" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list) printf '[{"id":"x-1","assignee":"sess-1","labels":[]},{"id":"x-2","assignee":"sess-1","labels":[]}]\n' ;;
+  *) printf 'Error resolving x-2: boom\n{"error":"1 of 2 issues failed to update","failed":[{"id":"x-2","error":"boom"}]}\n' >&2; exit 1 ;;
+esac
+EOF
+chmod +x "$SHIM7/bd"
+SCRATCH7B="$(mktemp -d)"
+ERR7U="$(PATH="$SHIM7:$PATH" BEADS_DIR="$SCRATCH7B" bash "$END" <<<"$(sessionend_payload "sess-1")" 2>&1 >/dev/null)"; RC7U=$?
+rm -rf "$SHIM7" "$SCRATCH7B"
+assert_rc "SessionEnd: exits 0 when the batched release fails" 0 "$RC7U"
+assert_contains "SessionEnd: the update failure names the hook and the call" "$ERR7U" "eb-session-end: bd update failed: 1 of 2 issues failed to update"
+assert_contains "SessionEnd: the update failure names the failed id" "$ERR7U" "x-2: boom"
+assert_contains "SessionEnd: a failed phase-2 release note is reported too" "$ERR7U" "eb-session-end: release note for"
+
 rm -rf "$scratch1"
 eb_report

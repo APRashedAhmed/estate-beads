@@ -37,12 +37,12 @@ while [[ $# -gt 0 ]]; do
 done
 command -v jq >/dev/null || die "jq not on PATH. Install jq, then re-run."
 
-bead_json() {  # <id> -> the bead object on stdout
+bead_json() {  # <id> <out-var> -> the bead object in out-var; rc 1 on failure, cause printed + in EB_BD_ERROR
   local raw b
-  raw="$(bd show --json "$1" 2>/dev/null)" || return 1
+  eb_bd raw show --json "$1" || return 1
   b="$(printf '%s' "$raw" | jq '.[0]')"
-  [[ "$b" != "null" && -n "$b" ]] || return 1
-  printf '%s' "$b"
+  [[ "$b" != "null" && -n "$b" ]] || { EB_BD_ERROR="no issue found matching \"$1\""; return 1; }
+  printf -v "$2" '%s' "$b"
 }
 
 release_and_halt() {  # <id> <halt-label> <next-line>
@@ -108,7 +108,7 @@ if [[ -n "$evidence" ]]; then
   [[ -n "$id" ]] || die "--evidence requires --id."
   [[ -z "$review" ]] || die "--evidence and --review are mutually exclusive."
 
-  bead="$(bead_json "$id")" || die "'bd show --json $id' failed. Confirm the id, then re-run."
+  bead_json "$id" bead || die "$(eb_show_remedy "$id")"
   status="$(printf '%s' "$bead" | jq -r '.status')"
   has_pending="$(printf '%s' "$bead" | jq -r '[.labels[]? | select(. == "acceptance-pending")] | length')"
   [[ "$status" == "in_progress" && "$has_pending" == "1" ]] \
@@ -171,7 +171,7 @@ r_reason="$(printf '%s' "$fm" | jq -r '.reason // ""')"
 case "$r_verdict" in PASS|FAIL|INCOMPLETE) ;; *) die "'$review' verdict must be PASS|FAIL|INCOMPLETE (got '$r_verdict')." ;; esac
 [[ "$r_spawn" == "fresh" ]] || die "'$review' is not attested 'spawn: fresh' (got '${r_spawn:-<unset>}'). A forked reviewer is refused; re-run with a fresh spawn."
 
-bead="$(bead_json "$r_bead")" || die "'bd show --json $r_bead' failed. Confirm the id in '$review' frontmatter, then re-run."
+bead_json "$r_bead" bead || die "$(eb_show_remedy "$r_bead" "Confirm the id in '$review' frontmatter")"
 b_status="$(printf '%s' "$bead" | jq -r '.status')"
 b_pending="$(printf '%s' "$bead" | jq -r '[.labels[]? | select(. == "acceptance-pending")] | length')"
 b_accept="$(printf '%s' "$bead" | jq -r '[.labels[]? | select(startswith("accept:"))] | if length == 1 then .[0][7:] else "" end')"

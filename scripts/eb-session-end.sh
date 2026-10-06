@@ -22,6 +22,10 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 RELEASE_SCRIPT="$HERE/bead-release.sh"
 SCRATCH_SCRIPT="$HERE/bead-scratch.sh"
+SELF="eb-session-end"
+# A bd failure prints a diagnostic on stderr via eb_bd; this hook still exits 0 in every case.
+# shellcheck source=lib/eb-common.sh
+source "$HERE/lib/eb-common.sh"
 # Total budget target, measured from THIS script's own start (not just phase 2) — leaves a margin
 # under Claude's shared ~1.5s SessionEnd budget for the synchronous `bd list` + batched release
 # calls in phase 1, whose cost varies with match count and db size.
@@ -49,7 +53,7 @@ except Exception:
 
 [ -n "${BEADS_DIR:-}" ] && [ -d "${BEADS_DIR:-}" ] || exit 0
 
-LIST_JSON="$(bd list --status in_progress --json 2>/dev/null)"
+eb_bd LIST_JSON list --status in_progress --json || exit 0
 [ -n "$LIST_JSON" ] || exit 0
 
 MATCHES="$(python3 - "$SESSION_ID" "$LIST_JSON" <<'PYEOF'
@@ -100,8 +104,7 @@ done <<<"$MATCHES"
 
 for assignee in "${!GROUP_IDS[@]}"; do
   # shellcheck disable=SC2086 # intentional word-splitting: space-joined id list
-  BEADS_ACTOR="$assignee" bd update ${GROUP_IDS[$assignee]} --status open --assignee "" --json \
-    >/dev/null 2>&1 || true
+  BEADS_ACTOR="$assignee" eb_bd _released update ${GROUP_IDS[$assignee]} --status open --assignee "" --json || true
 done
 
 # --- Phase 2 (concurrent, best-effort, deadline-bound): per-Bead rule-5 release note ------------
@@ -109,11 +112,16 @@ done
 # rule-5 progress note, preserving any prior COMPLETED/NEXT via its own `bd show`. Backgrounded one
 # job per Bead so N claims cost ~one chain's wall time, not N chains' wall time.
 note_pids=()
+note_ids=()
+note_errs="$(mktemp -d)"
 while IFS=$'\t' read -r id assignee; do
   [ -n "$id" ] || continue
+  # stderr goes to a per-job file and is printed only if the job fails (below), so a clean run
+  # stays silent but a failed release note is no longer invisible.
   BEADS_ACTOR="$assignee" "$RELEASE_SCRIPT" --id "$id" --note "claim released at session end" \
-    >/dev/null 2>&1 &
+    >/dev/null 2>"$note_errs/${#note_pids[@]}" &
   note_pids+=("$!")
+  note_ids+=("$id")
 done <<<"$MATCHES"
 
 if [ "${#note_pids[@]}" -gt 0 ]; then
@@ -125,9 +133,17 @@ if [ "${#note_pids[@]}" -gt 0 ]; then
     'BEGIN { r = total - elapsed; if (r < floor) r = floor; printf "%.3f", r }')
   ( sleep "$_remaining_s"; for p in "${note_pids[@]}"; do kill -9 "$p" 2>/dev/null; done ) &
   watchdog_pid=$!
-  for p in "${note_pids[@]}"; do wait "$p" 2>/dev/null || true; done
+  for i in "${!note_pids[@]}"; do
+    wait "${note_pids[$i]}" 2>/dev/null; _rc=$?
+    # 137 = killed by the deadline watchdog (the documented loss of only the note).
+    if [ "$_rc" -ne 0 ] && [ "$_rc" -ne 137 ]; then
+      printf '%s: release note for %s failed (rc=%s):\n' "$SELF" "${note_ids[$i]}" "$_rc" >&2
+      cat "$note_errs/$i" >&2 2>/dev/null || true
+    fi
+  done
   kill "$watchdog_pid" 2>/dev/null || true
   wait "$watchdog_pid" 2>/dev/null || true
 fi
+rm -rf "$note_errs"
 
 exit 0

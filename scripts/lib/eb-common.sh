@@ -18,13 +18,84 @@ eb_expand_seat_root() {
   printf '%s' "${p/\$SEAT_ROOT/${SEAT_ROOT:-$HOME/heliopolis}}"
 }
 
+# --- bd wrapper that never swallows an error ------------------------------------------------
+# eb_bd <out-var> <bd-verb> [bd args...]   (the leading `bd` is NOT repeated: `eb_bd raw show --json X`)
+# Runs `bd "$@"`, reading BOTH streams: bd 1.3.0 puts `--json` argument errors on stdout
+# (`{"error":...}`) but per-issue `update`/`reopen` failures and every `list` error on stderr.
+# Success: assigns stdout (untouched) to <out-var>, forwards stderr (the beads.role warning
+# included), returns 0. Failure: prints ONE diagnostic on stderr
+#   <SELF>: bd <verb> failed: <message>
+# then the rest of bd's stderr (warning included, so it never stands alone), assigns stdout to
+# <out-var>, and returns bd's exit code unchanged. Never exits, so hooks keep their `|| true`.
+# <message>, in order: stdout JSON `.error` (+ the failed ids from `.failed[]`); the last stderr
+# line as the same JSON envelope; non-JSON stdout; the first `Error...` stderr line, else the
+# first stderr line that is not a warning/hint; `<bd printed no error text>`.
+# The message is exported as EB_BD_ERROR (empty on success) so callers can pick a remedy.
+# Call it as a plain statement (a nameref, so no `$(...)`); EB_BD_ERROR is lost in a subshell.
+eb_bd() {
+  local -n _eb_bd_out="$1"; shift
+  local _eb_verb="${1:-}" _eb_errf _eb_rc _eb_so _eb_msg="" _eb_drop="" _eb_line
+  local _eb_jq='if type == "object" and .error then (.error | tostring)
+      + (if (.failed | type) == "array" and (.failed | length) > 0
+         then ": " + (.failed | map((.id // "?") + ": " + (.error // "failed")) | join("; ")) else "" end)
+    else empty end'
+  _eb_errf="$(mktemp)" || _eb_errf=/dev/null
+  _eb_so="$(bd "$@" 2>"$_eb_errf")" && _eb_rc=0 || _eb_rc=$?
+  _eb_bd_out="$_eb_so"
+  if (( _eb_rc == 0 )); then
+    EB_BD_ERROR=""; export EB_BD_ERROR
+    [[ -s "$_eb_errf" ]] && cat "$_eb_errf" >&2
+    rm -f "$_eb_errf"; return 0
+  fi
+  _eb_msg="$(printf '%s' "$_eb_so" | jq -r "$_eb_jq" 2>/dev/null)" || _eb_msg=""
+  if [[ -z "$_eb_msg" ]]; then
+    _eb_line="$(grep -v '^[[:space:]]*$' "$_eb_errf" | tail -n 1)"
+    if [[ "$_eb_line" == "{"* ]]; then
+      _eb_msg="$(printf '%s' "$_eb_line" | jq -r "$_eb_jq" 2>/dev/null)" || _eb_msg=""
+      [[ -n "$_eb_msg" ]] && _eb_drop="$_eb_line"
+    fi
+  fi
+  if [[ -z "$_eb_msg" && -n "$_eb_so" ]] && ! printf '%s' "$_eb_so" | jq -e . >/dev/null 2>&1; then
+    _eb_msg="$_eb_so"
+  fi
+  if [[ -z "$_eb_msg" ]]; then
+    _eb_line="$(grep -m1 -E '^[Ee]rror' "$_eb_errf")"
+    [[ -n "$_eb_line" ]] || _eb_line="$(grep -v -E '^([[:space:]]|warning:|Hint:|$)' "$_eb_errf" | head -n 1)"
+    if [[ -n "$_eb_line" ]]; then _eb_drop="$_eb_line"; _eb_msg="${_eb_line#Error: }"; fi
+  fi
+  [[ -n "$_eb_msg" ]] || _eb_msg="<bd printed no error text>"
+  EB_BD_ERROR="$_eb_msg"; export EB_BD_ERROR
+  printf '%s: bd %s failed: %s\n' "${SELF:-eb-common}" "$_eb_verb" "$_eb_msg" >&2
+  if [[ -n "$_eb_drop" ]]; then grep -v -x -F -- "$_eb_drop" "$_eb_errf" >&2 || true
+  else cat "$_eb_errf" >&2 || true; fi
+  rm -f "$_eb_errf"; return "$_eb_rc"
+}
+
+# True when the last eb_bd failure says the Bead does not exist (not that the database broke).
+eb_bd_not_found() {
+  case "${EB_BD_ERROR:-}" in
+    *"no issue found"*|*"no issues found"*|"Issue "*" not found"*) return 0 ;;
+  esac
+  return 1
+}
+
+# The die message for a failed `bd show --json <id>`: the "Confirm the id" remedy only when bd
+# said the Bead does not exist, otherwise the real error. [confirm-text] defaults to "Confirm the id".
+eb_show_remedy() {  # <id> [confirm-text]
+  if eb_bd_not_found; then
+    printf "'bd show --json %s' failed. %s, then re-run." "$1" "${2:-Confirm the id}"
+  else
+    printf "'bd show --json %s' failed: the database call failed: %s. Fix the cause, then re-run." "$1" "${EB_BD_ERROR:-<unknown>}"
+  fi
+}
+
 # --- Metadata merge (decision 3) ------------------------------------------------------------
 # Read the Bead's existing metadata, deep-merge the given JSON fragment over it (jq `*`), write
 # the FULL merged object back. Never loses an existing key even if bd's own --metadata merge
 # behaves differently across versions.
 eb_metadata_merge() {  # <id> <json-fragment> [jq-filter applied to the merged object; default .]
-  local id="$1" frag="$2" filter="${3:-.}" existing merged
-  existing="$(bd show --json "$id" 2>/dev/null | jq -c '.[0].metadata // {}')" \
+  local id="$1" frag="$2" filter="${3:-.}" existing merged raw
+  { eb_bd raw show --json "$id" && existing="$(printf '%s' "$raw" | jq -c '.[0].metadata // {}')"; } \
     || { printf 'eb-common: bd show --json failed for %s; refusing to merge metadata (would drop existing keys)\n' "$id" >&2; return 1; }
   [[ -n "$existing" && "$existing" != "null" ]] || existing='{}'
   merged="$(jq -nc --argjson a "$existing" --argjson b "$frag" "\$a * \$b | $filter")" \
@@ -143,7 +214,7 @@ eb_detect_model() {
 # other `bd show` failure.
 eb_open_blockers() {  # <id> -> comma-joined open blocker ids on stdout
   local id="$1" json
-  json="$(bd show --json "$id" 2>/dev/null)" || return 1
+  eb_bd json show --json "$id" || return 1   # eb_bd already printed the cause on stderr
   printf '%s' "$json" \
     | jq -r '(.[0].dependencies // []) | map(select((.dependency_type == "blocks" or .dependency_type == "blocked-by") and .status != "closed") | .id) | join(",")'
 }

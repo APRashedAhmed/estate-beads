@@ -276,4 +276,27 @@ out="$(PATH="$stubdir2:$PATH" scripts/bead-close.sh --id "$restorefailcase" --re
 assert_rc "a doubly-failed close/restore exits 2" 2 "$rc"
 assert_contains "stderr prints RESTORE-FAILED with the id" "$out" "RESTORE-FAILED $restorefailcase"
 
+# =============================================================================================
+# "Confirm the id" only for a missing id; a broken database reports its own error
+# =============================================================================================
+empty_db="$(mktemp -d)"
+cd "$scratch" || exit 1   # a non-git dir: bd also prints its beads.role warning here
+miss="$("$ROOT/scripts/bead-close.sh" --id zz-999 --reason declined --note n --operator 2>&1)"; rc=$?
+broken="$(BEADS_DIR="$empty_db" "$ROOT/scripts/bead-close.sh" --id close-abc --reason declined --note n --operator 2>&1)"; rc2=$?
+cd "$ROOT" || exit 1
+rmdir "$empty_db"
+assert_rc "a missing id exits 1" 1 "$rc"
+assert_contains "a missing id keeps the Confirm-the-id remedy" "$miss" "Confirm the id"
+assert_eq "a missing id: the error is the first line" "bead-close: bd show failed: no issues found matching the provided IDs" "${miss%%$'\n'*}"
+case "$miss" in
+  *"bd show failed"*"beads.role not configured"*) eb_ok "a missing id: the warning follows the error" ;;
+  *) eb_bad "a missing id: the warning follows the error" "$miss" ;;
+esac
+assert_rc "a broken database exits 1" 1 "$rc2"
+assert_contains "a broken database reports bd's own error" "$broken" "no beads database found"
+case "$broken" in
+  *"Confirm the id"*) eb_bad "a broken database does not say Confirm the id" "$broken" ;;
+  *) eb_ok "a broken database does not say Confirm the id" ;;
+esac
+
 eb_report

@@ -29,6 +29,9 @@ SELF="create-beads-batch"
 
 die() { printf '%s: %s\n' "$SELF" "$1" >&2; exit "${2:-1}"; }
 
+# shellcheck source=lib/eb-common.sh
+source "$SCRIPT_DIR/lib/eb-common.sh"
+
 artifact=""; dry_run=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -69,8 +72,11 @@ ext_ids="$(printf '%s' "$plan" | jq -r '
 if [[ -n "$ext_ids" ]]; then
   while IFS= read -r extid; do
     [[ -n "$extid" ]] || continue
-    bd show --json "$extid" >/dev/null 2>&1 \
-      || die "parent/dep '$extid' is not a sibling key in this batch and not found in the database. Fix the artifact, then re-run; nothing was created."
+    if ! eb_bd _ext_show show --json "$extid"; then
+      eb_bd_not_found \
+        && die "parent/dep '$extid' is not a sibling key in this batch and not found in the database. Fix the artifact, then re-run; nothing was created."
+      die "could not check parent/dep '$extid': the database call failed (cause above). Fix the cause, then re-run; nothing was created."
+    fi
   done <<<"$ext_ids"
 fi
 
@@ -159,7 +165,9 @@ for i in $(seq 0 $((n_units - 1))); do
     continue
   fi
 
-  existing_json="$(bd list --json --status open,in_progress,blocked,deferred,closed --limit 0 2>/dev/null \
+  eb_bd all_json list --json --status open,in_progress,blocked,deferred,closed --limit 0 \
+    || die "could not list existing Beads to check key '$key' (cause above). Fix the cause, then re-run; units already created in this run are unaffected (idempotent by key)."
+  existing_json="$(printf '%s' "$all_json" \
     | jq -c --arg k "$key" --arg p "$project" \
       'map(select(.metadata.key == $k and ((.labels // []) | index("project:" + $p) != null))) | .[0] // empty')"
 

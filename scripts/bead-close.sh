@@ -64,12 +64,12 @@ done
 [[ -n "$note"   ]] || die "missing required --note '<text>'."
 command -v jq >/dev/null || die "jq not on PATH. Install jq, then re-run."
 
-bead_json() {  # <id> -> the bead object on stdout
+bead_json() {  # <id> <out-var> -> the bead object in out-var; rc 1 on failure, cause printed + in EB_BD_ERROR
   local raw b
-  raw="$(bd show --json "$1" 2>/dev/null)" || return 1
+  eb_bd raw show --json "$1" || return 1
   b="$(printf '%s' "$raw" | jq '.[0]')"
-  [[ "$b" != "null" && -n "$b" ]] || return 1
-  printf '%s' "$b"
+  [[ "$b" != "null" && -n "$b" ]] || { EB_BD_ERROR="no issue found matching \"$1\""; return 1; }
+  printf -v "$2" '%s' "$b"
 }
 
 case "$reason" in
@@ -81,7 +81,7 @@ case "$reason" in
   *) die "unknown --reason '$reason'. Valid: superseded|duplicate|abandoned|infeasible|declined." ;;
 esac
 
-bead="$(bead_json "$id")" || die "'bd show --json $id' failed. Confirm the id, then re-run."
+bead_json "$id" bead || die "$(eb_show_remedy "$id")"
 status="$(printf '%s' "$bead" | jq -r '.status')"
 [[ "$status" != "closed" ]] || refused "Bead $id is already closed."
 
@@ -89,7 +89,10 @@ status="$(printf '%s' "$bead" | jq -r '.status')"
 if [[ "$reason" == superseded || "$reason" == duplicate ]]; then
   [[ -n "$ref" ]] || refused "$reason requires --ref <bead-id> naming the other Bead (contract §5.4)."
   [[ "$ref" != "$id" ]] || refused "--ref must name a different Bead, not $id itself."
-  ref_bead="$(bead_json "$ref")" || refused "--ref '$ref' does not exist. Confirm the id, then re-run."
+  bead_json "$ref" ref_bead || {
+    eb_bd_not_found && refused "--ref '$ref' does not exist. Confirm the id, then re-run."
+    die "$(eb_show_remedy "$ref")"
+  }
   ref_status="$(printf '%s' "$ref_bead" | jq -r '.status')"
   [[ "$ref_status" == "open" || "$ref_status" == "in_progress" ]] \
     || refused "--ref '$ref' is $ref_status, not open or in_progress; $reason must name a Bead that replaces or duplicates live work."
@@ -125,8 +128,8 @@ if [[ -n "$blockers" ]]; then
 fi
 
 # --- open A4 children (contract §1.2 rule 3) ------------------------------------------------
-children_json="$(bd show --json --children "$id" 2>/dev/null)" \
-  || die "'bd show --json --children $id' failed while checking children. Nothing was changed."
+eb_bd children_json show --json --children "$id" \
+  || die "'bd show --json --children $id' failed while checking children (cause above). Nothing was changed."
 open_children="$(printf '%s' "$children_json" \
   | jq -r --arg id "$id" '(.[$id] // []) | map(select(.status != "closed")) | map(.id) | join(",")')"
 if [[ -n "$open_children" ]]; then

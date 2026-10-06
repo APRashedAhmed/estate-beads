@@ -264,4 +264,28 @@ done
 out="$(scripts/create-bead.sh --title "TrailingForce" "${CB_COMMON[@]}" --force 2>&1)"; rc=$?
 assert_rc "trailing boolean --force still exits 0" 0 "$rc"
 
+# --- the idempotency guard relays bd's real cause (BEADS_DIR at an existing dir with no database) --
+# bd list writes its errors to stderr even with --json; a 2>/dev/null there leaves only a generic line.
+empty_db="$(mktemp -d)"
+cd "$scratch" || exit 1
+err="$(BEADS_DIR="$empty_db" "$ROOT/scripts/create-bead.sh" --title "GuardBroken" "${CB_COMMON[@]}" 2>&1)"; rc=$?
+cd "$ROOT" || exit 1
+rmdir "$empty_db"
+assert_rc "a broken database makes the idempotency guard exit 1" 1 "$rc"
+assert_contains "the guard failure relays bd's cause" "$err" "no beads database found"
+first_line="${err%%$'\n'*}"
+case "$first_line" in
+  "create-bead: bd list failed: no beads database found"*) eb_ok "first line is the error, naming the list call" ;;
+  *) eb_bad "first line is the error, naming the list call" "first line: $first_line" ;;
+esac
+case "$err" in
+  *"no beads database found"*"idempotency guard could not list"*) eb_ok "the cause is printed before the remedy line" ;;
+  *) eb_bad "the cause is printed before the remedy line" "$err" ;;
+esac
+# a beads.role warning, when bd emits one, never precedes the error
+case "$err" in
+  *"beads.role not configured"*"no beads database found"*) eb_bad "no warning before the guard's error" "$err" ;;
+  *) eb_ok "no warning before the guard's error" ;;
+esac
+
 eb_report

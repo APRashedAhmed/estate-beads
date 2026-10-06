@@ -92,4 +92,27 @@ assert_rc "an on-ladder codex reviewer (opus exec, astra@low) reopens" 0 "$rc"
 assert_eq "the on-ladder codex reopen prints REOPENED" "REOPENED" "$out"
 assert_eq "the on-ladder codex reopen returns the Bead to open" "open" "$(bd show --json "$id5" 2>/dev/null | jq -r '.[0].status')"
 
+# --- "Confirm the id" only for a missing id; a broken database reports its own error -------------
+empty_db="$(mktemp -d)"
+missrep="$REPORTS/missing-id.md"; eb_write_review "$missrep" "zz-999" FAIL opus fresh "$pass"
+brokenrep="$REPORTS/broken-db.md"; eb_write_review "$brokenrep" "reopen-abc" FAIL opus fresh "$pass"
+cd "$scratch" || exit 1   # a non-git dir: bd also prints its beads.role warning here
+miss="$("$ROOT/scripts/bead-reopen.sh" --review "$missrep" 2>&1)"; rc=$?
+broken="$(BEADS_DIR="$empty_db" "$ROOT/scripts/bead-reopen.sh" --review "$brokenrep" 2>&1)"; rc2=$?
+cd "$ROOT" || exit 1
+rmdir "$empty_db"
+assert_rc "a missing id exits 1" 1 "$rc"
+assert_contains "a missing id keeps the Confirm-the-id remedy" "$miss" "Confirm the id"
+assert_eq "a missing id: the error is the first line" "bead-reopen: bd show failed: no issues found matching the provided IDs" "${miss%%$'\n'*}"
+case "$miss" in
+  *"bd show failed"*"beads.role not configured"*) eb_ok "a missing id: the warning follows the error" ;;
+  *) eb_bad "a missing id: the warning follows the error" "$miss" ;;
+esac
+assert_rc "a broken database exits 1" 1 "$rc2"
+assert_contains "a broken database reports bd's own error" "$broken" "no beads database found"
+case "$broken" in
+  *"Confirm the id"*) eb_bad "a broken database does not say Confirm the id" "$broken" ;;
+  *) eb_ok "a broken database does not say Confirm the id" ;;
+esac
+
 eb_report

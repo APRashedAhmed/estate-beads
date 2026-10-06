@@ -103,4 +103,67 @@ jq 'del(.claude_ranks.opus)' "$real_ladder" > "$ltmp/norank.json"
 msg="$(EB_LADDER_FILE="$ltmp/norank.json" eb_reviewer_adequate sonnet low claude opus "" 2>&1 >/dev/null)"
 assert_contains "missing reviewer rank gives a reason" "$msg" "has no rank"
 
+# --- eb_bd: reads BOTH streams, error first, warning kept, rc preserved, never exits ----------------
+# A PATH shim `bd` whose behaviour is chosen by EB_FAKE (the real bd/live database is never touched).
+fakebin="$(mktemp -d)"
+trap 'rm -rf "$tmpbin" "$fakebin"' EXIT
+cat > "$fakebin/bd" <<'EOF'
+#!/usr/bin/env bash
+warn() { printf 'warning: beads.role not configured (GH#2950).\n  Fix: git config beads.role maintainer\n' >&2; }
+case "${EB_FAKE:-}" in
+  stdout-json) warn; printf '{"error":"E1"}\n'; exit 1 ;;
+  stderr-text) warn; printf 'Error: E2\nHint: try again\n' >&2; exit 1 ;;
+  envelope)    warn; printf 'Error resolving x: E3\n' >&2
+               printf '{"error":"1 of 2 issues failed to update","failed":[{"id":"x","error":"E3"}]}\n' >&2
+               printf '[{"id":"ok-1"}]\n'; exit 3 ;;
+  success)     warn; printf '[{"id":"ok-1"}]\n'; exit 0 ;;
+  silent-fail) exit 1 ;;
+esac
+exit 99
+EOF
+chmod +x "$fakebin/bd"
+SELF=t
+errf="$(mktemp)"
+run_bd() {  # <EB_FAKE mode> <verb> -> sets rc, out, err (eb_bd runs in THIS shell)
+  EB_FAKE="$1" PATH="$fakebin:$PATH" eb_bd out "$2" --json x 2>"$errf"; rc=$?
+  err="$(cat "$errf")"
+}
+first_line() { printf '%s' "${1%%$'\n'*}"; }
+
+run_bd stdout-json show
+assert_rc "eb_bd returns the CLI's exit code (stdout-JSON error)" 1 "$rc"
+assert_eq "eb_bd names a stdout JSON .error first" "t: bd show failed: E1" "$(first_line "$err")"
+assert_eq "eb_bd exports the message as EB_BD_ERROR" "E1" "${EB_BD_ERROR:-}"
+assert_contains "eb_bd keeps the beads.role warning after the error" "$err" "beads.role not configured"
+case "$err" in
+  *"failed: E1"*"beads.role not configured"*) eb_ok "eb_bd prints the error line before the warning" ;;
+  *) eb_bad "eb_bd prints the error line before the warning" "$err" ;;
+esac
+
+run_bd stderr-text list
+assert_rc "eb_bd returns the CLI's exit code (stderr error)" 1 "$rc"
+assert_eq "eb_bd names a stderr 'Error: ...' line, not the leading warning" "t: bd list failed: E2" "$(first_line "$err")"
+assert_contains "eb_bd keeps the warning (stderr error)" "$err" "beads.role not configured"
+case "$err" in
+  *"failed: E2"*"beads.role not configured"*) eb_ok "eb_bd prints the error line before the warning (stderr error)" ;;
+  *) eb_bad "eb_bd prints the error line before the warning (stderr error)" "$err" ;;
+esac
+
+run_bd envelope update
+assert_rc "eb_bd preserves a non-1 exit code" 3 "$rc"
+assert_contains "eb_bd reads the stderr JSON envelope" "$(first_line "$err")" "1 of 2 issues failed to update"
+assert_contains "eb_bd names the failed id from .failed[]" "$(first_line "$err")" "x: E3"
+assert_contains "eb_bd exports the failed-id message" "${EB_BD_ERROR:-}" "x: E3"
+
+run_bd success show
+assert_rc "eb_bd returns 0 on success" 0 "$rc"
+assert_eq "eb_bd passes stdout to the out-var untouched" '[{"id":"ok-1"}]' "$out"
+assert_contains "eb_bd forwards the warning on success" "$err" "beads.role not configured"
+assert_eq "eb_bd clears EB_BD_ERROR on success" "" "${EB_BD_ERROR:-}"
+
+run_bd silent-fail show
+assert_rc "eb_bd returns the exit code when bd prints nothing" 1 "$rc"
+assert_eq "eb_bd says so when bd printed no error text" "t: bd show failed: <bd printed no error text>" "$(first_line "$err")"
+rm -f "$errf"
+
 eb_report

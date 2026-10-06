@@ -45,7 +45,7 @@ r_prior="$(printf '%s' "$fm" | jq -r '.prior // empty')"
 # absolute" rule still matches. Guarded by -f: only normalize an existing file.
 [[ -f "$r_prior" ]] && r_prior="$(realpath "$r_prior")"
 
-raw="$(bd show --json "$r_bead" 2>/dev/null)" || die "'bd show --json $r_bead' failed. Confirm the id in '$review' frontmatter, then re-run."
+eb_bd raw show --json "$r_bead" || die "$(eb_show_remedy "$r_bead" "Confirm the id in '$review' frontmatter")"
 bead="$(printf '%s' "$raw" | jq '.[0]')"
 [[ "$bead" != "null" && -n "$bead" ]] || die "no Bead '$r_bead' in the database."
 

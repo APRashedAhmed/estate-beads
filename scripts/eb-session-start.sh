@@ -57,7 +57,11 @@ PRIME_JSON="$(bd prime --hook-json 2>/dev/null)"
 
 # bd list --json (single call, not one per Bead — portability-contract.md §5.5-adjacent
 # discipline applies to any per-claim loop, and there is exactly one candidate set here).
-LIST_JSON="$(bd list --status in_progress --json 2>/dev/null)"
+SELF="eb-session-start"
+# shellcheck source=lib/eb-common.sh
+source "$HERE/lib/eb-common.sh"
+# A list failure prints a diagnostic on stderr (the sweep is skipped); the hook still exits 0.
+eb_bd LIST_JSON list --status in_progress --json || LIST_JSON=""
 
 RELEASE_SCRIPT="$HERE/bead-release.sh"
 
