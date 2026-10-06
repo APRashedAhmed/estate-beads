@@ -9,7 +9,9 @@ source scripts/lib/eb-common.sh
 source tests/_assert.sh
 
 tmpbin="$(mktemp -d)"
-trap 'rm -rf "$tmpbin"' EXIT
+ltmp=""; fakebin=""; errf=""
+# One cleanup for every fixture this file creates (later assignments fill the variables).
+trap 'rm -rf "$tmpbin" "$ltmp" "$fakebin"; [[ -z "$errf" ]] || rm -f "$errf"' EXIT
 cat > "$tmpbin/bd" <<'EOF'
 #!/usr/bin/env bash
 # Shim: `bd show` always fails; anything else is unexpected in this test.
@@ -79,7 +81,7 @@ msg="$(eb_reviewer_adequate opus high codex gpt-6.1-sol high 2>&1 >/dev/null)"
 assert_contains "non-fable refusal keeps the one-tier-above hint" "$msg" "one tier above the executor"
 
 # --- ladder-file robustness (EB_LADDER_FILE override) ---------------------------------------------
-ltmp="$(mktemp -d)"; trap 'rm -rf "$tmpbin" "$ltmp"' EXIT
+ltmp="$(mktemp -d)"
 real_ladder="$ROOT/scripts/lib/verifier-ladder.json"
 for v in claude codex; do
   if [[ $v == claude ]]; then a=(sonnet low claude opus ""); else a=(sonnet low codex gpt-6.1-sol low); fi
@@ -106,7 +108,6 @@ assert_contains "missing reviewer rank gives a reason" "$msg" "has no rank"
 # --- eb_bd: reads BOTH streams, error first, warning kept, rc preserved, never exits ----------------
 # A PATH shim `bd` whose behaviour is chosen by EB_FAKE (the real bd/live database is never touched).
 fakebin="$(mktemp -d)"
-trap 'rm -rf "$tmpbin" "$fakebin"' EXIT
 cat > "$fakebin/bd" <<'EOF'
 #!/usr/bin/env bash
 warn() { printf 'warning: beads.role not configured (GH#2950).\n  Fix: git config beads.role maintainer\n' >&2; }
@@ -118,6 +119,9 @@ case "${EB_FAKE:-}" in
                printf '[{"id":"ok-1"}]\n'; exit 3 ;;
   success)     warn; printf '[{"id":"ok-1"}]\n'; exit 0 ;;
   silent-fail) exit 1 ;;
+  silent-7)    exit 7 ;;
+  two-errors)  printf 'Error: first\nError: second\nHint: try again\n' >&2; exit 1 ;;
+  partial)     printf '[{"id":"ok"}]\n'; printf 'Error: failed\n' >&2; exit 2 ;;
 esac
 exit 99
 EOF
@@ -164,6 +168,26 @@ assert_eq "eb_bd clears EB_BD_ERROR on success" "" "${EB_BD_ERROR:-}"
 run_bd silent-fail show
 assert_rc "eb_bd returns the exit code when bd prints nothing" 1 "$rc"
 assert_eq "eb_bd says so when bd printed no error text" "t: bd show failed: <bd printed no error text>" "$(first_line "$err")"
-rm -f "$errf"
+
+run_bd two-errors list
+assert_rc "eb_bd returns the exit code (two Error lines)" 1 "$rc"
+assert_eq "eb_bd selects the FIRST Error line" "t: bd list failed: first" "$(first_line "$err")"
+assert_contains "eb_bd still relays the second Error line" "$err" "Error: second"
+
+run_bd partial list
+assert_rc "eb_bd returns the exit code (stdout JSON without .error)" 2 "$rc"
+assert_eq "eb_bd ignores valid stdout JSON without .error as the message" "t: bd list failed: failed" "$(first_line "$err")"
+
+# Under a caller's set -e/pipefail, a grep that matches nothing must not abort the diagnostic.
+sub_err="$(EB_FAKE=silent-7 PATH="$fakebin:$PATH" bash -c \
+  'set -euo pipefail; source scripts/lib/eb-common.sh; SELF=t; eb_bd out show' 2>&1 >/dev/null)"; rc=$?
+assert_rc "eb_bd under set -euo pipefail returns the tracker's exit code" 7 "$rc"
+assert_contains "eb_bd under set -euo pipefail still prints the diagnostic" "$sub_err" "t: bd show failed: <bd printed no error text>"
+
+# An out-var named _eb_* would alias an internal local: refused without running the tracker.
+msg="$(EB_FAKE=success PATH="$fakebin:$PATH" eb_bd _eb_so show 2>&1 >/dev/null)"; rc=$?
+assert_rc "eb_bd refuses an _eb_ output variable name" 2 "$rc"
+assert_contains "eb_bd names the _eb_ restriction" "$msg" "output variable name must not start with _eb_"
+case "$msg" in *"beads.role"*) eb_bad "eb_bd does not run the tracker for an _eb_ name" "$msg" ;; *) eb_ok "eb_bd does not run the tracker for an _eb_ name" ;; esac
 
 eb_report

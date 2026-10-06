@@ -136,6 +136,8 @@ if [[ "$force" -ne 1 ]]; then
   # The guard's stderr is shown only on failure: a bd warning on a successful list must not
   # precede the create call's own output (a warning never stands alone, nor comes first).
   guard_err="$(mktemp)"
+  # Removed on every exit path (a9c60c8 dropped the EXIT trap this script used to carry).
+  trap 'rm -f "${guard_err:-}"' EXIT
   eb_bd list_json list --json --status open,in_progress,blocked --limit 0 2>"$guard_err" \
     || { cat "$guard_err" >&2; rm -f "$guard_err"; die "the idempotency guard could not list existing Beads (cause above). Fix it, then re-run; no Bead was created."; }
   rm -f "$guard_err"

@@ -348,6 +348,7 @@ assert_contains "SessionEnd: a list failure prints the cause on stderr" "$ERR7L"
 ERR7S="$(BEADS_DIR="$EMPTY7" bash "$START" <<<"$(sessionstart_payload "$SID7")" 2>&1 >/dev/null)"; RC7S=$?
 rmdir "$EMPTY7"
 assert_rc "SessionStart: exits 0 when the database is unreachable" 0 "$RC7S"
+assert_contains "SessionStart: an unreachable database prints the cause on stderr" "$ERR7S" "no beads database found"
 rm -rf "$scratch7"
 
 # A read-only database fails the list before any update, so the batched release (and the phase-2

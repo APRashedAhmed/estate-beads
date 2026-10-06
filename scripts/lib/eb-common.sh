@@ -28,18 +28,31 @@ eb_expand_seat_root() {
 # then the rest of bd's stderr (warning included, so it never stands alone), assigns stdout to
 # <out-var>, and returns bd's exit code unchanged. Never exits, so hooks keep their `|| true`.
 # <message>, in order: stdout JSON `.error` (+ the failed ids from `.failed[]`); the last stderr
-# line as the same JSON envelope; non-JSON stdout; the first `Error...` stderr line, else the
-# first stderr line that is not a warning/hint; `<bd printed no error text>`.
+# line as the same JSON envelope; non-JSON stdout; the FIRST `Error...` stderr line (not the last
+# line: the CLI prints `Hint:` lines last, so the last line would pick a hint), else the first
+# stderr line that is not a warning/hint; `<bd printed no error text>`. Valid-JSON stdout without
+# `.error` (e.g. a partial success list) is never used as the message. Any other `Error` lines
+# are not lost: they are relayed with the rest of stderr.
 # The message is exported as EB_BD_ERROR (empty on success) so callers can pick a remedy.
 # Call it as a plain statement (a nameref, so no `$(...)`); EB_BD_ERROR is lost in a subshell.
+# An out-var name starting `_eb_` would alias a local here: refused (rc 2). If mktemp fails,
+# the tracker is not run (rc 1). Every internal grep is guarded so a caller's `set -e` survives.
 eb_bd() {
+  if [[ "$1" == _eb_* ]]; then
+    printf '%s: eb_bd: output variable name must not start with _eb_\n' "${SELF:-eb-common}" >&2
+    return 2
+  fi
   local -n _eb_bd_out="$1"; shift
   local _eb_verb="${1:-}" _eb_errf _eb_rc _eb_so _eb_msg="" _eb_drop="" _eb_line
+  if ! _eb_errf="$(mktemp)"; then
+    EB_BD_ERROR="bd $_eb_verb not run: could not create a temporary file"; export EB_BD_ERROR
+    printf '%s: %s\n' "${SELF:-eb-common}" "$EB_BD_ERROR" >&2
+    _eb_bd_out=""; return 1
+  fi
   local _eb_jq='if type == "object" and .error then (.error | tostring)
       + (if (.failed | type) == "array" and (.failed | length) > 0
          then ": " + (.failed | map((.id // "?") + ": " + (.error // "failed")) | join("; ")) else "" end)
     else empty end'
-  _eb_errf="$(mktemp)" || _eb_errf=/dev/null
   _eb_so="$(bd "$@" 2>"$_eb_errf")" && _eb_rc=0 || _eb_rc=$?
   _eb_bd_out="$_eb_so"
   if (( _eb_rc == 0 )); then
@@ -49,7 +62,7 @@ eb_bd() {
   fi
   _eb_msg="$(printf '%s' "$_eb_so" | jq -r "$_eb_jq" 2>/dev/null)" || _eb_msg=""
   if [[ -z "$_eb_msg" ]]; then
-    _eb_line="$(grep -v '^[[:space:]]*$' "$_eb_errf" | tail -n 1)"
+    _eb_line="$(grep -v '^[[:space:]]*$' "$_eb_errf" | tail -n 1 || true)"
     if [[ "$_eb_line" == "{"* ]]; then
       _eb_msg="$(printf '%s' "$_eb_line" | jq -r "$_eb_jq" 2>/dev/null)" || _eb_msg=""
       [[ -n "$_eb_msg" ]] && _eb_drop="$_eb_line"
@@ -59,8 +72,8 @@ eb_bd() {
     _eb_msg="$_eb_so"
   fi
   if [[ -z "$_eb_msg" ]]; then
-    _eb_line="$(grep -m1 -E '^[Ee]rror' "$_eb_errf")"
-    [[ -n "$_eb_line" ]] || _eb_line="$(grep -v -E '^([[:space:]]|warning:|Hint:|$)' "$_eb_errf" | head -n 1)"
+    _eb_line="$(grep -m1 -E '^[Ee]rror' "$_eb_errf" || true)"
+    [[ -n "$_eb_line" ]] || _eb_line="$(grep -v -E '^([[:space:]]|warning:|Hint:|$)' "$_eb_errf" | head -n 1 || true)"
     if [[ -n "$_eb_line" ]]; then _eb_drop="$_eb_line"; _eb_msg="${_eb_line#Error: }"; fi
   fi
   [[ -n "$_eb_msg" ]] || _eb_msg="<bd printed no error text>"

@@ -113,7 +113,14 @@ done
 # job per Bead so N claims cost ~one chain's wall time, not N chains' wall time.
 note_pids=()
 note_ids=()
-note_errs="$(mktemp -d)"
+note_errs=""
+# No other EXIT trap exists in this script; this removes the per-job directory on every exit path.
+trap '[ -z "$note_errs" ] || rm -rf "$note_errs"' EXIT
+if ! note_errs="$(mktemp -d)" || [ -z "$note_errs" ]; then
+  note_errs=""
+  printf '%s: could not create a temporary directory; release notes skipped\n' "$SELF" >&2
+  exit 0
+fi
 while IFS=$'\t' read -r id assignee; do
   [ -n "$id" ] || continue
   # stderr goes to a per-job file and is printed only if the job fails (below), so a clean run
@@ -144,6 +151,4 @@ if [ "${#note_pids[@]}" -gt 0 ]; then
   kill "$watchdog_pid" 2>/dev/null || true
   wait "$watchdog_pid" 2>/dev/null || true
 fi
-rm -rf "$note_errs"
-
 exit 0
