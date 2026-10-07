@@ -159,6 +159,17 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
   claims release (status+assignee, asserted by `tests/eb-session.test.sh`) in ~1.31s on a scratch
   db, under the ~1.5s shared budget — but the deadline can still truncate the note-writing phase
   for a large claim count; the release state itself is unaffected.
+- **Session log (pa-jaaf).** `eb-session-end.sh` appends `<sid>\tended\t<ts>` to a session log
+  before any `bd` call, and `failed` lines with the error text when a release fails;
+  `eb-session-start.sh` appends `started`. Default path
+  `${XDG_STATE_HOME:-$HOME/.local/state}/estate-beads/sessions.tsv` (outside the Beads repo),
+  override with `EB_SESSION_LOG`. At session start, per claim held by another session: last log
+  state `ended` → flagged immediately (release needed), transcript not consulted; no log line →
+  the 6 h transcript check (idle or crashed: check before releasing); a fresh transcript with
+  no marker stays silent. `eb-session-notice.sh` (second SessionStart hook) tells the operator
+  via exit 2 + stderr. The log is append-only and never rotated. SessionEnd hooks share a 1.5 s
+  budget that a plugin hook's own `timeout` does not raise; only
+  `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` does.
 - **Guard inner `bd show` timeout (fix round 2, m4) — closed.** Was equal to the PreToolUse hook
   timeout (10s); now `BD_SHOW_TIMEOUT = 5` in `scripts/eb-guard.py`, strictly under it, so a slow
   `bd show` times out INSIDE the guard's own budget and fails closed (`deny`) rather than running

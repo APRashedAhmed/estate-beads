@@ -47,6 +47,13 @@ if [ -x "$SCRATCH_SCRIPT" ]; then
   "$SCRATCH_SCRIPT" sweep-stale "${EB_SCRATCH_SWEEP_STALE_HOURS:-24}" >/dev/null 2>&1 || true
 fi
 
+# --- 1c. session log: record this session as started (a resumed session overrides its earlier
+# `ended` line, last line wins) — before the BEADS_DIR check so it runs regardless of the database.
+SELF="eb-session-start"
+# shellcheck source=lib/eb-common.sh
+source "$HERE/lib/eb-common.sh"
+[ -z "$SESSION_ID" ] || eb_session_log "$SESSION_ID" started
+
 # --- 2. prime + advisory sweep, only if BEADS_DIR resolves -------------------------------------
 if [ -z "${BEADS_DIR:-}" ] || [ ! -d "$BEADS_DIR" ]; then
   exit 0
@@ -57,9 +64,6 @@ PRIME_JSON="$(bd prime --hook-json 2>/dev/null)"
 
 # bd list --json (single call, not one per Bead — portability-contract.md §5.5-adjacent
 # discipline applies to any per-claim loop, and there is exactly one candidate set here).
-SELF="eb-session-start"
-# shellcheck source=lib/eb-common.sh
-source "$HERE/lib/eb-common.sh"
 # A list failure prints a diagnostic on stderr (the sweep is skipped); the hook still exits 0.
 eb_bd LIST_JSON list --status in_progress --json || LIST_JSON=""
 
@@ -75,14 +79,27 @@ CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 # ends, so presence alone is not a liveness signal).
 STALE_HOURS="${EB_SESSION_START_SWEEP_STALE_HOURS:-6}"
 
-python3 - "$PRIME_JSON" "$RELEASE_SCRIPT" "$SESSION_ID" "$CONFIG_DIR" "$LIST_JSON" "$STALE_HOURS" <<'PYEOF'
+SESSION_LOG="${EB_SESSION_LOG:-${XDG_STATE_HOME:-$HOME/.local/state}/estate-beads/sessions.tsv}"
+
+python3 - "$PRIME_JSON" "$RELEASE_SCRIPT" "$SESSION_ID" "$CONFIG_DIR" "$LIST_JSON" "$STALE_HOURS" "$SESSION_LOG" <<'PYEOF'
 import json
 import re
 import sys
 import time
 from pathlib import Path
 
-prime_raw, release_script, own_session_id, config_dir, list_raw, stale_hours_raw = sys.argv[1:7]
+prime_raw, release_script, own_session_id, config_dir, list_raw, stale_hours_raw, session_log = sys.argv[1:8]
+
+# Session log (pa-jaaf): per sid, the LAST started/ended line wins (a resumed session's `started`
+# overrides its earlier `ended`). sid -> (state, timestamp). `failed` lines are diagnostic only.
+last_state = {}
+try:
+    for line in Path(session_log).read_text().splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 3 and parts[1] in ("started", "ended"):
+            last_state[parts[0]] = (parts[1], parts[2])
+except OSError:
+    pass
 stale_seconds = float(stale_hours_raw) * 3600.0
 now = time.time()
 
@@ -106,6 +123,7 @@ SESSION_ID_RE = re.compile(
 )
 
 advisories = []
+ended_advisories = []
 pending_advisories = []
 for issue in issues:
     assignee = (issue or {}).get("assignee") or ""
@@ -120,8 +138,14 @@ for issue in issues:
     # M3/§12.5: liveness first, for EVERY candidate — the sweep only ever concerns claims held
     # by a DEAD session; a Bead whose session is still live is not this sweep's business at all,
     # whether or not it happens to carry acceptance-pending.
-    transcripts = list(Path(config_dir).glob(f"projects/*/{sid}.jsonl"))
-    if transcripts:
+    ended = last_state.get(sid, ("", ""))
+    ended_sweep = ended[0] == "ended"
+    transcripts = [] if ended_sweep else list(Path(config_dir).glob(f"projects/*/{sid}.jsonl"))
+    if ended_sweep:
+        # The session log says this session ended: no transcript check (a fresh transcript is
+        # exactly what a just-ended session leaves behind).
+        reason = f"session ended at {ended[1]} without releasing this claim"
+    elif transcripts:
         # M3: presence alone is not a liveness signal — a transcript persists long after its
         # session ends (measured: ~4300 transcripts on disk at review time, spanning ~30 days).
         # Only a RECENTLY-touched transcript reads as live; an old one is a crash too.
@@ -145,15 +169,18 @@ for issue in issues:
         )
         continue
 
-    advisories.append(
-        f"- {issue.get('id')} is claimed by session {sid} ({reason}) — looks crashed. Advisory "
-        f"only: run `{release_script} --id {issue.get('id')} --note '<why>'` to release it; "
-        f"this hook never releases automatically."
+    line = (
+        f"- {issue.get('id')} is claimed by session {sid} ({reason}) — idle or crashed: check "
+        f"before releasing. Advisory only: run `{release_script} --id {issue.get('id')} "
+        f"--note '<why>'` to release it; this hook never releases automatically."
     )
+    (ended_advisories if ended_sweep else advisories).append(line)
 
 out = prime
 hook_out = out.setdefault("hookSpecificOutput", {})
 extra = ""
+if ended_advisories:
+    extra += "\n\n## estate-beads: claims held by ended sessions (release needed; never auto-released)\n" + "\n".join(ended_advisories) + "\n"
 if advisories:
     extra += "\n\n## estate-beads: possibly-crashed claims (advisory only, never auto-released)\n" + "\n".join(advisories) + "\n"
 if pending_advisories:

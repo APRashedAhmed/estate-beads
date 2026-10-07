@@ -84,6 +84,23 @@ eb_bd() {
   rm -f "$_eb_errf"; return "$_eb_rc"
 }
 
+# --- Session log (pa-jaaf) --------------------------------------------------------------------
+# eb_session_log <session-id> <started|ended|failed> [text]
+# Appends one `<sid>\t<state>\t<utc ts>[\t<text>]` line to $EB_SESSION_LOG (default
+# ${XDG_STATE_HOME:-$HOME/.local/state}/estate-beads/sessions.tsv), deliberately OUTSIDE the Beads
+# repo. Single-line `>>` appends, no locking, no rotation (rotation is deliberately skipped).
+# Never fails the caller: a write failure prints one stderr line and returns 0.
+eb_session_log() {
+  local _eb_f="${EB_SESSION_LOG:-${XDG_STATE_HOME:-$HOME/.local/state}/estate-beads/sessions.tsv}" _eb_t="${3:-}"
+  _eb_t="${_eb_t//[$'\t\r\n']/ }"
+  if mkdir -p "$(dirname "$_eb_f")" 2>/dev/null \
+     && printf '%s\t%s\t%s%s\n' "$1" "$2" "$(date -u +%FT%TZ)" "${_eb_t:+$'\t'$_eb_t}" >>"$_eb_f" 2>/dev/null; then
+    return 0
+  fi
+  printf '%s: could not write the session log %s\n' "${SELF:-eb-common}" "$_eb_f" >&2
+  return 0
+}
+
 # True when the last eb_bd failure says the Bead does not exist (not that the database broke).
 eb_bd_not_found() {
   case "${EB_BD_ERROR:-}" in

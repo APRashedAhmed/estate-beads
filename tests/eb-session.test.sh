@@ -18,6 +18,9 @@ source "$ROOT/tests/_scratch_db.sh"
 # throwaway root this suite owns so the sweeps never touch the operator's real scratch folders.
 EB_SESSION_TEST_SCRATCH_ROOT="$(mktemp -d)"
 export EB_SCRATCH_ROOT="$EB_SESSION_TEST_SCRATCH_ROOT"
+# pa-jaaf: the session log defaults to the operator's real ~/.local/state; pin it here so no case
+# (existing or new) can write it.
+export EB_SESSION_LOG="$EB_SESSION_TEST_SCRATCH_ROOT/sessions.tsv"
 trap 'rm -rf "$EB_SESSION_TEST_SCRATCH_ROOT"' EXIT
 
 sessionstart_payload() {  # <session-id>
@@ -320,8 +323,15 @@ if printf '%s' "$OUT_NODB" | grep -q 'Beads Workflow Context'; then
 else
   eb_ok "SessionStart: no-op (no prime/sweep text) when no db"
 fi
-OUT_END_NODB="$(env -u BEADS_DIR bash "$END" <<<"$(sessionend_payload "cccccccc-cccc-cccc-cccc-cccccccccccc")" 2>&1)"
-assert_eq "SessionEnd: silent (no stdout) when no db" "" "$OUT_END_NODB"
+# T2 (pa-jaaf): SessionEnd with no BEADS_DIR still records the `ended` marker, names BEADS_DIR on
+# stderr (the old silent `exit 0` must not return), keeps stdout empty, and exits 0.
+LOG_T2="$EB_SESSION_TEST_SCRATCH_ROOT/t2.tsv"; SID_T2="cccccccc-cccc-cccc-cccc-cccccccccccc"
+OUT_END_NODB="$(env -u BEADS_DIR EB_SESSION_LOG="$LOG_T2" bash "$END" <<<"$(sessionend_payload "$SID_T2")" 2>"$EB_SESSION_TEST_SCRATCH_ROOT/t2.err")"; RC_T2=$?
+assert_eq "T2: SessionEnd with no db writes nothing on stdout" "" "$OUT_END_NODB"
+assert_rc "T2: SessionEnd with no db exits 0" 0 "$RC_T2"
+assert_contains "T2: SessionEnd with no db names BEADS_DIR on stderr (not a silent exit)" \
+  "$(cat "$EB_SESSION_TEST_SCRATCH_ROOT/t2.err")" "BEADS_DIR is unset or not a directory; claims not released"
+assert_contains "T2: SessionEnd with no db still writes the ended marker" "$(cat "$LOG_T2")" "$SID_T2"$'\tended\t'
 
 # --- 7. SessionEnd on a write failure: a diagnostic on stderr, and the hook STILL exits 0 -------------
 # Fault injector: the scratch database is made read-only after the claim lands (restored below).
@@ -364,12 +374,100 @@ esac
 EOF
 chmod +x "$SHIM7/bd"
 SCRATCH7B="$(mktemp -d)"
-ERR7U="$(PATH="$SHIM7:$PATH" BEADS_DIR="$SCRATCH7B" bash "$END" <<<"$(sessionend_payload "sess-1")" 2>&1 >/dev/null)"; RC7U=$?
+LOG7="$EB_SESSION_TEST_SCRATCH_ROOT/t7.tsv"
+ERR7U="$(EB_SESSION_LOG="$LOG7" PATH="$SHIM7:$PATH" BEADS_DIR="$SCRATCH7B" bash "$END" <<<"$(sessionend_payload "sess-1")" 2>&1 >/dev/null)"; RC7U=$?
 rm -rf "$SHIM7" "$SCRATCH7B"
 assert_rc "SessionEnd: exits 0 when the batched release fails" 0 "$RC7U"
 assert_contains "SessionEnd: the update failure names the hook and the call" "$ERR7U" "eb-session-end: bd update failed: 1 of 2 issues failed to update"
 assert_contains "SessionEnd: the update failure names the failed id" "$ERR7U" "x-2: boom"
 assert_contains "SessionEnd: a failed phase-2 release note is reported too" "$ERR7U" "eb-session-end: release note for"
+# T7: the failure text lands in the log AND the `ended` marker is still there (failure text is
+# not written in place of the marker).
+assert_contains "T7: the failed release is logged with its error text" "$(cat "$LOG7")" \
+  $'sess-1\tfailed\t'
+assert_contains "T7: the logged failure carries the batched-update error" "$(cat "$LOG7")" \
+  "1 of 2 issues failed to update"
+assert_contains "T7: the ended marker is still logged next to the failure" "$(cat "$LOG7")" $'sess-1\tended\t'
+
+# --- T1: the marker lands BEFORE any bd call or BEADS_DIR check ------------------------------------
+SHIM1="$(mktemp -d)"; EMPTY1="$(mktemp -d)"; LOG_T1="$EB_SESSION_TEST_SCRATCH_ROOT/t1.tsv"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$SHIM1/bd"; chmod +x "$SHIM1/bd"
+EB_SESSION_LOG="$LOG_T1" PATH="$SHIM1:$PATH" BEADS_DIR="$EMPTY1" bash "$END" \
+  <<<"$(sessionend_payload "sid-t1")" >/dev/null 2>&1
+assert_contains "T1: ended marker present although bd list fails" "$(cat "$LOG_T1")" $'sid-t1\tended\t'
+rm -rf "$SHIM1" "$EMPTY1"
+
+# --- T3..T6, T8: the start sweep reads the log (fresh scratch db; the claims are hand-made) --------
+scratchT=""; eb_scratch_db scratchT
+mkdir -p "$HOME/.claude/projects/fake-project"
+SID_SW="77777777-7777-7777-7777-777777777777"
+newbead() {  # <title> <assignee-sid> -> bead id on stdout
+  local id
+  id="$(BEADS_ACTOR=creator bd create "$1" --type task -p 2 --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+  BEADS_ACTOR="$2" bd update "$id" --claim --json >/dev/null
+  printf '%s' "$id"
+}
+status_of() { bd show --json "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["status"])'; }
+
+# T3: ended + claim held + FRESH transcript -> flagged under the ended heading, transcript ignored.
+SID_T3="aaaa3333-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; B_T3="$(newbead "t3" "$SID_T3")"
+: > "$HOME/.claude/projects/fake-project/$SID_T3.jsonl"
+LOG_T3="$EB_SESSION_TEST_SCRATCH_ROOT/t3.tsv"; printf '%s\tended\t2026-10-07T01:02:03Z\n' "$SID_T3" > "$LOG_T3"
+OUT_T3="$(EB_SESSION_LOG="$LOG_T3" bash "$START" <<<"$(sessionstart_payload "$SID_SW")")"
+assert_contains "T3: an ended session's claim is listed under the ended-sessions heading" "$OUT_T3" \
+  "## estate-beads: claims held by ended sessions (release needed; never auto-released)"
+assert_contains "T3: the Bead is listed" "$OUT_T3" "$B_T3"
+assert_contains "T3: the reason says when the session ended (a fresh transcript did not hide it)" "$OUT_T3" \
+  "session ended at 2026-10-07T01:02:03Z without releasing this claim"
+# T8: the envelope is still one JSON object after the new section.
+python3 -c 'import json,sys; json.loads(sys.argv[1])' "$OUT_T3" \
+  && eb_ok "T8: output parses as JSON with the ended-sessions section" \
+  || eb_bad "T8: output parses as JSON with the ended-sessions section" "got: $OUT_T3"
+
+# T4: ended THEN started for the same sid (a resume) -> not flagged; last line wins.
+SID_T4="bbbb4444-bbbb-bbbb-bbbb-bbbbbbbbbbbb"; B_T4="$(newbead "t4" "$SID_T4")"
+: > "$HOME/.claude/projects/fake-project/$SID_T4.jsonl"
+LOG_T4="$EB_SESSION_TEST_SCRATCH_ROOT/t4.tsv"
+printf '%s\tended\t2026-10-07T01:00:00Z\n%s\tstarted\t2026-10-07T01:05:00Z\n' "$SID_T4" "$SID_T4" > "$LOG_T4"
+OUT_T4="$(EB_SESSION_LOG="$LOG_T4" bash "$START" <<<"$(sessionstart_payload "$SID_SW")")"
+python3 - "$OUT_T4" "$B_T4" <<'PYEOF'
+import sys
+assert sys.argv[2] not in sys.argv[1], f"a resumed session's claim must not be flagged: {sys.argv[1]}"
+PYEOF
+[ $? -eq 0 ] && eb_ok "T4: ended-then-started session is not flagged (last line wins)" \
+             || eb_bad "T4: ended-then-started session is not flagged (last line wins)"
+
+# T5: no marker + stale transcript -> reworded advisory, still in_progress.
+SID_T5="cccc5555-cccc-cccc-cccc-cccccccccccc"; B_T5="$(newbead "t5" "$SID_T5")"
+: > "$HOME/.claude/projects/fake-project/$SID_T5.jsonl"; touch -d '-7 hours' "$HOME/.claude/projects/fake-project/$SID_T5.jsonl"
+OUT_T5="$(EB_SESSION_LOG="$EB_SESSION_TEST_SCRATCH_ROOT/t5-empty.tsv" bash "$START" <<<"$(sessionstart_payload "$SID_SW")")"
+assert_contains "T5: no-marker advisory uses the idle-or-crashed wording" "$OUT_T5" "idle or crashed: check before releasing"
+assert_contains "T5: no-marker advisory still names bead-release.sh" "$OUT_T5" "bead-release.sh"
+assert_eq "T5: the Bead stays in_progress (advisory never releases)" "in_progress" "$(status_of "$B_T5")"
+
+# T6: acceptance-pending Bead held by an ended sid -> pending advisory, never bead-release.sh.
+SID_T6="dddd6666-dddd-dddd-dddd-dddddddddddd"; B_T6="$(newbead "t6" "$SID_T6")"
+BEADS_ACTOR="$SID_T6" bd update "$B_T6" --append-notes "EVIDENCE: pending" --json >/dev/null
+BEADS_ACTOR="$SID_T6" bd update "$B_T6" --add-label "acceptance-pending" --json >/dev/null
+LOG_T6="$EB_SESSION_TEST_SCRATCH_ROOT/t6.tsv"; printf '%s\tended\t2026-10-07T01:02:03Z\n' "$SID_T6" > "$LOG_T6"
+OUT_T6="$(EB_SESSION_LOG="$LOG_T6" bash "$START" <<<"$(sessionstart_payload "$SID_SW")")"
+python3 - "$OUT_T6" "$B_T6" <<'PYEOF'
+import json, sys
+ctx = json.loads(sys.argv[1])["hookSpecificOutput"].get("additionalContext", "")
+lines = [l for l in ctx.splitlines() if sys.argv[2] in l]
+assert lines, f"{sys.argv[2]} missing from advisories"
+for l in lines:
+    assert "bead-accept.sh" in l and "bead-release.sh" not in l, l
+PYEOF
+[ $? -eq 0 ] && eb_ok "T6: a pending Bead held by an ended sid gets the pending advisory (bead-accept.sh, no bead-release.sh)" \
+             || eb_bad "T6: a pending Bead held by an ended sid gets the pending advisory (bead-accept.sh, no bead-release.sh)"
+assert_eq "T6: the pending Bead stays in_progress" "in_progress" "$(status_of "$B_T6")"
+
+# The start hook records its own sid as started.
+LOG_ST="$EB_SESSION_TEST_SCRATCH_ROOT/st.tsv"
+EB_SESSION_LOG="$LOG_ST" bash "$START" <<<"$(sessionstart_payload "$SID_SW")" >/dev/null
+assert_contains "SessionStart: appends a started line for its own sid" "$(cat "$LOG_ST")" "$SID_SW"$'\tstarted\t'
+rm -rf "$scratchT"
 
 rm -rf "$scratch1"
 eb_report

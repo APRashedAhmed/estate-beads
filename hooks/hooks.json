@@ -14,6 +14,12 @@
         "hooks": [
           { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/eb-session-start.sh\"", "timeout": 10 }
         ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact|fork",
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/eb-session-notice.sh\"", "timeout": 10 }
+        ]
       }
     ],
     "SessionEnd": [

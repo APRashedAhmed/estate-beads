@@ -45,13 +45,20 @@ except Exception:
 
 [ -n "$SESSION_ID" ] || exit 0
 
+# Unconditional first marker (pa-jaaf): lands before any scratch sweep, BEADS_DIR check, or `bd`
+# call, so even a budget kill or a missing database leaves the next session a record.
+eb_session_log "$SESSION_ID" ended
+
 # --- scratch cleanup: delete THIS session's own marked bead-scratch.sh folders ------------------
 # Filesystem-only (glob + stat, no `bd` call) — negligible against the shared SessionEnd budget.
 # Never fails the hook: bead-scratch.sh's own sweep-session is itself silent/no-fail, and this is
 # additionally guarded here so a missing script or a non-zero exit never blocks claim release.
 [ -x "$SCRATCH_SCRIPT" ] && "$SCRATCH_SCRIPT" sweep-session "$SESSION_ID" >/dev/null 2>&1
 
-[ -n "${BEADS_DIR:-}" ] && [ -d "${BEADS_DIR:-}" ] || exit 0
+if [ -z "${BEADS_DIR:-}" ] || [ ! -d "${BEADS_DIR:-}" ]; then
+  printf '%s: BEADS_DIR is unset or not a directory; claims not released\n' "$SELF" >&2
+  exit 0
+fi
 
 eb_bd LIST_JSON list --status in_progress --json || exit 0
 [ -n "$LIST_JSON" ] || exit 0
@@ -104,7 +111,8 @@ done <<<"$MATCHES"
 
 for assignee in "${!GROUP_IDS[@]}"; do
   # shellcheck disable=SC2086 # intentional word-splitting: space-joined id list
-  BEADS_ACTOR="$assignee" eb_bd _released update ${GROUP_IDS[$assignee]} --status open --assignee "" --json || true
+  BEADS_ACTOR="$assignee" eb_bd _released update ${GROUP_IDS[$assignee]} --status open --assignee "" --json \
+    || eb_session_log "$SESSION_ID" failed "${EB_BD_ERROR:-bd update failed}"
 done
 
 # --- Phase 2 (concurrent, best-effort, deadline-bound): per-Bead rule-5 release note ------------
@@ -146,6 +154,8 @@ if [ "${#note_pids[@]}" -gt 0 ]; then
     if [ "$_rc" -ne 0 ] && [ "$_rc" -ne 137 ]; then
       printf '%s: release note for %s failed (rc=%s):\n' "$SELF" "${note_ids[$i]}" "$_rc" >&2
       cat "$note_errs/$i" >&2 2>/dev/null || true
+      eb_session_log "$SESSION_ID" failed \
+        "release note for ${note_ids[$i]} failed (rc=$_rc): $(head -n 1 "$note_errs/$i" 2>/dev/null)"
     fi
   done
   kill "$watchdog_pid" 2>/dev/null || true
