@@ -15,6 +15,9 @@ source "$ROOT/tests/_assert.sh"
 
 SCRATCH_ROOT_DIR="$(mktemp -d)"
 export EB_SCRATCH_ROOT="$SCRATCH_ROOT_DIR"
+export EB_SESSION_LOG="$SCRATCH_ROOT_DIR/sessions.tsv"
+DEFAULT_LOG="${XDG_STATE_HOME:-$HOME/.local/state}/estate-beads/sessions.tsv"
+DEFAULT_LOG_BEFORE="$(stat -c %Y "$DEFAULT_LOG" 2>/dev/null || echo absent)"
 unset CLAUDE_CODE_SESSION_ID
 ERR_FILE="$(mktemp)"
 FAKE_BIN=""
@@ -183,6 +186,16 @@ sessionstart_payload() { printf '{"session_id":"%s","source":"startup","hook_eve
 SID_SWEEPER="55555555-5555-5555-5555-555555555555"
 ERR_START="$(env -u BEADS_DIR bash "$START" <<<"$(sessionstart_payload "$SID_SWEEPER")" 2>&1 >/dev/null)"
 RC_START=$?
+
+# The session hooks log before the BEADS_DIR check: the pinned scratch log must exist and the
+# operator's real default log must be untouched.
+DEFAULT_LOG_AFTER="$(stat -c %Y "$DEFAULT_LOG" 2>/dev/null || echo absent)"
+if [[ -f "$EB_SESSION_LOG" && "$DEFAULT_LOG_AFTER" == "$DEFAULT_LOG_BEFORE" ]]; then
+  eb_ok "session hooks: write the pinned scratch log, not the real default log"
+else
+  eb_bad "session hooks: write the pinned scratch log, not the real default log" \
+    "scratch log exists: $([[ -f "$EB_SESSION_LOG" ]] && echo yes || echo no); default mtime before=$DEFAULT_LOG_BEFORE after=$DEFAULT_LOG_AFTER"
+fi
 
 if [[ -d "$OLD_FOLDER" ]]; then
   eb_bad "SessionStart: the 24h sweep deletes a stale (>24h) marked folder" "still exists: $OLD_FOLDER" \

@@ -5,7 +5,9 @@
 # is discarded and the only operator-visible channel is exit 2 with stderr (the session continues).
 # One channel per hook, so this is a separate hook entry: silent exit 0 unless it has a notice.
 # Live rendering of the exit-2 notice is doc-verified, not probe-verified.
-# Common path (no ended sid in the log) makes no `bd` call. Never prints to stdout.
+# Skips `bd` only while the log records no ended session; once any session has ended normally and
+# is not resumed, it runs one `bd list` per session start (bounded by its 10 s timeout).
+# Never prints to stdout.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SELF="eb-session-notice"

@@ -94,11 +94,11 @@ prime_raw, release_script, own_session_id, config_dir, list_raw, stale_hours_raw
 # overrides its earlier `ended`). sid -> (state, timestamp). `failed` lines are diagnostic only.
 last_state = {}
 try:
-    for line in Path(session_log).read_text().splitlines():
+    for line in Path(session_log).read_text(errors="replace").splitlines():
         parts = line.split("\t")
         if len(parts) >= 3 and parts[1] in ("started", "ended"):
             last_state[parts[0]] = (parts[1], parts[2])
-except OSError:
+except (OSError, ValueError):
     pass
 stale_seconds = float(stale_hours_raw) * 3600.0
 now = time.time()

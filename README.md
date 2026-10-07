@@ -167,7 +167,9 @@ single Claude-only script with no shim/engine split. The scaffold's T2 Codex stu
   state `ended` → flagged immediately (release needed), transcript not consulted; no log line →
   the 6 h transcript check (idle or crashed: check before releasing); a fresh transcript with
   no marker stays silent. `eb-session-notice.sh` (second SessionStart hook) tells the operator
-  via exit 2 + stderr. The log is append-only and never rotated. SessionEnd hooks share a 1.5 s
+  via exit 2 + stderr; it skips `bd` only while the log records no ended session — once any
+  session has ended normally and is not resumed, it runs one `bd list` per session start
+  (bounded by its 10 s timeout). The log is append-only and never rotated. SessionEnd hooks share a 1.5 s
   budget that a plugin hook's own `timeout` does not raise; only
   `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` does.
 - **Guard inner `bd show` timeout (fix round 2, m4) — closed.** Was equal to the PreToolUse hook

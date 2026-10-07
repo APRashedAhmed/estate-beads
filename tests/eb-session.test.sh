@@ -424,6 +424,13 @@ python3 -c 'import json,sys; json.loads(sys.argv[1])' "$OUT_T3" \
   && eb_ok "T8: output parses as JSON with the ended-sessions section" \
   || eb_bad "T8: output parses as JSON with the ended-sessions section" "got: $OUT_T3"
 
+# T9: a non-UTF-8 byte in the log must not drop the envelope.
+LOG_T9="$EB_SESSION_TEST_SCRATCH_ROOT/t9.tsv"; printf '\xff\n%s\tended\t2026-10-07T01:02:03Z\n' "$SID_T3" > "$LOG_T9"
+OUT_T9="$(EB_SESSION_LOG="$LOG_T9" bash "$START" <<<"$(sessionstart_payload "$SID_SW")" 2>/dev/null)"
+python3 -c 'import json,sys; json.loads(sys.argv[1])' "$OUT_T9" \
+  && eb_ok "T9: a non-UTF-8 byte in the session log still yields a JSON envelope" \
+  || eb_bad "T9: a non-UTF-8 byte in the session log still yields a JSON envelope" "got: $OUT_T9"
+
 # T4: ended THEN started for the same sid (a resume) -> not flagged; last line wins.
 SID_T4="bbbb4444-bbbb-bbbb-bbbb-bbbbbbbbbbbb"; B_T4="$(newbead "t4" "$SID_T4")"
 : > "$HOME/.claude/projects/fake-project/$SID_T4.jsonl"
