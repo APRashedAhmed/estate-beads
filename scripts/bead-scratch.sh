@@ -187,7 +187,7 @@ _init_in() {
 }
 
 # _remove_dir DIR — rm -rf DIR and make a failed removal visible: if rm fails, or exits 0 but the
-# folder is still there, print one line to stderr and return 1.
+# folder is still there, print a message to stderr and return 1.
 _remove_dir() {
   local dir="$1" err rc
   err="$(rm -rf "$dir" 2>&1)"; rc=$?

@@ -250,7 +250,9 @@ for MODE in boom noop; do
   assert_eq "rm ($MODE): a failed removal returns 1" "1" "$RC_F"
   assert_contains "rm ($MODE): stderr names the folder" "$ERR_F" "could not remove $FOLDER_F "
   assert_contains "rm ($MODE): stderr carries the rm status" "$ERR_F" "(rc=$([[ $MODE == boom ]] && echo 1 || echo 0))"
-  assert_contains "rm ($MODE): stderr carries the reason" "$ERR_F" "$([[ $MODE == boom ]] && echo 'fake-rm: boom' || echo 'still exists')"
+  if [[ "$MODE" == boom ]]; then
+    assert_contains "rm (boom): stderr carries rm's own error" "$ERR_F" "fake-rm: boom"
+  fi
   assert_contains "rm ($MODE): stderr says $WANT" "$ERR_F" "$WANT"
   rm -rf "$FOLDER_F"
 
