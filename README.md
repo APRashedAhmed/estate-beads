@@ -269,7 +269,12 @@ scoping lever) is the operative rule that survives; this paragraph is the incide
   placement; a copy left as `.yaml` is silently invisible to the registry. The
   descriptor's `id: estate-beads-report` must equal the filename stem
   (`estate-beads-report`) — it already does; do not edit `id:` when placing it. The
-  checkpointing dispatcher supplies `CKPT_HANDOFF_PATH` (the rolling handoff's path)
+  descriptor's `run:` line is the plain command `eb-closeout-report.sh`: Claude Code puts the
+  plugin's `bin/` on `PATH`, and `bin/eb-closeout-report.sh` runs the installed plugin's
+  `scripts/eb-closeout-report.sh` (root from `bin/eb-root.sh`, else its own tree); outside a
+  session with the plugin loaded it is not found (exit 127). An already-placed live file keeps
+  the old `run:` line until `~/.claude/checkpoint.d/estate-beads-report.yml` is re-placed from
+  the seed. The checkpointing dispatcher supplies `CKPT_HANDOFF_PATH` (the rolling handoff's path)
   as an environment variable to this `kind: shell` participant's run line on a
   closeout event; `scripts/eb-closeout-report.sh` uses a non-empty `$1`, otherwise that
   variable, and consults the archived sibling (`<folder>/archive/<file name>`) only when no

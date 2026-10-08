@@ -19,16 +19,15 @@
 # (ckpt-participants.sh:233) — the gap recorded in reviews/u5-batch.md is closed.
 id: estate-beads-report
 kind: shell
-# Resolves estate-beads' installed path the way design §12.4 specifies for every cross-plugin
-# consumer (installed_plugins.json .plugins["estate-beads@homelab-plugins"].installPath, never a
-# commit sha), preferring a "user"-scope record over any other (m5, review pa-s2s.8-review-1 —
-# mirrors bin/eb-root.sh's own `_registry_root` selection, `(map(select(.scope=="user")) + .)[0]`,
-# rather than `.[-1]`), honouring ${CLAUDE_CONFIG_DIR:-~/.claude} (m5), and falling back to the
-# workspace sibling for a dev checkout. NOT via bin/eb-root.sh: that helper's script-relative
-# fallback needs an absolute path to itself already in hand, which is exactly what this line is
-# bootstrapping from a totally external shell (the operator's live session), so it cannot be the
-# bootstrap step here.
-run: "J=\"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json\"; P=$(jq -r '(.plugins[\"estate-beads@homelab-plugins\"] // []) | (map(select(.scope == \"user\")) + .)[0].installPath // empty' \"$J\" 2>/dev/null); [ -n \"$P\" ] || P=\"${SEAT_ROOT:-$HOME/heliopolis}/engineering/agentic/plugins/estate-beads\"; bash \"$P/scripts/eb-closeout-report.sh\" \"${CKPT_HANDOFF_PATH:-}\""
+# A plain command: Claude Code puts each loaded plugin's bin/ folder on the Bash tool's PATH, so
+# bin/eb-closeout-report.sh is found by name. It resolves the installed plugin root through
+# bin/eb-root.sh (so a stale PATH entry after a plugin update still runs the current script) and
+# falls back to its own tree. No argument: the dispatcher sets CKPT_HANDOFF_PATH for the command and
+# the script reads it. The run value has no command substitution or dynamically resolved bash
+# script path; the former run line triggered Safety Net rule analysis.dynamic-shell-source.
+# Outside a Claude Code session with this plugin loaded the command is not on PATH (exit 127),
+# which the checkpoint health notice reports.
+run: "eb-closeout-report.sh"
 order: 40
 # on: closeout only — this participant reports Beads at the end of a
 # work-unit, never on an ordinary mid-session checkpoint refresh.
