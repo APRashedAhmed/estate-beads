@@ -68,4 +68,32 @@ assert_rc "mixed open/closed handoff exits 0" 0 "$rc5"
 assert_contains "the open Bead reports CLOSED as before" "$out5" "$open_bead: CLOSED"
 assert_contains "the closed Bead reports ALREADY-CLOSED" "$out5" "$closed_bead: ALREADY-CLOSED"
 
+# --- archived handoff: rolling path gone, file under archive/ -> same output, evidence names the archive path
+mk() { scripts/create-bead.sh --title "$1" --description d --acceptance a --project p --accept operator --recognized-by x; }
+arc_bead="$(mk Arc)"
+mkdir -p "$scratch/roll/archive"
+arc="$scratch/roll/archive/h.md"
+printf -- '---\nstatus: complete\nbeads: [%s]\n---\n' "$arc_bead" >"$arc"
+rolling="$scratch/roll/h.md"
+out_roll="$(scripts/eb-closeout-report.sh "$rolling")"; rc_roll=$?
+assert_rc "rolling path with only an archived file exits 0" 0 "$rc_roll"
+assert_eq "rolling path output equals the archived-path output" "$arc_bead: ACCEPTANCE-PENDING operator" "$out_roll"
+arc_notes="$(bd show --json "$arc_bead" 2>/dev/null | jq -r '.[0].notes // ""')"
+assert_contains "evidence names the archived path" "$arc_notes" "archived handoff: $arc"
+assert_eq "evidence does not name the rolling path" "0" "$(printf '%s' "$arc_notes" | grep -cF "$rolling")"
+
+# --- the given file exists and a differing archived sibling exists -> the given file is read, the sibling is not
+bead_given="$(mk Given)"; bead_sib="$(mk Sibling)"
+mkdir -p "$scratch/both/archive"
+printf -- '---\nbeads: [%s]\n---\n' "$bead_given" >"$scratch/both/h.md"
+printf -- '---\nbeads: [%s]\n---\n' "$bead_sib" >"$scratch/both/archive/h.md"
+out_both="$(scripts/eb-closeout-report.sh "$scratch/both/h.md")"; rc_both=$?
+assert_rc "existing file with an archived sibling exits 0" 0 "$rc_both"
+assert_eq "output is that of the given file, not the sibling" "$bead_given: ACCEPTANCE-PENDING operator" "$out_both"
+
+# --- neither the given path nor the archive has a file -> exit 1, message names the given path
+out_none="$(scripts/eb-closeout-report.sh "$scratch/nowhere/h.md" 2>&1)"; rc_none=$?
+assert_rc "no file anywhere exits 1" 1 "$rc_none"
+assert_contains "the message names the given path" "$out_none" "no file at '$scratch/nowhere/h.md'."
+
 eb_report

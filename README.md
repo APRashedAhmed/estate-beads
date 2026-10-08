@@ -269,6 +269,8 @@ scoping lever) is the operative rule that survives; this paragraph is the incide
   placement; a copy left as `.yaml` is silently invisible to the registry. The
   descriptor's `id: estate-beads-report` must equal the filename stem
   (`estate-beads-report`) — it already does; do not edit `id:` when placing it. The
-  checkpointing dispatcher supplies `CKPT_HANDOFF_PATH` (the archived handoff's path)
+  checkpointing dispatcher supplies `CKPT_HANDOFF_PATH` (the rolling handoff's path)
   as an environment variable to this `kind: shell` participant's run line on a
-  closeout event; `scripts/eb-closeout-report.sh` reads it (falling back to `$1`).
+  closeout event; `scripts/eb-closeout-report.sh` uses a non-empty `$1`, otherwise that
+  variable, and consults the archived sibling (`<folder>/archive/<file name>`) only when no
+  file exists at the selected path, using it if it is a file.

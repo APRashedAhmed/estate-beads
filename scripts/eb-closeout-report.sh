@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# eb-closeout-report.sh <handoff-path>  (or $CKPT_HANDOFF_PATH when no argument is given)
+# eb-closeout-report.sh [<handoff-path>]  ($1 when non-empty, otherwise $CKPT_HANDOFF_PATH)
+#
+# <handoff-path> may be the rolling path or the archived path. When no file sits at it but
+# `<its folder>/archive/<its file name>` is a file, that archived file is read and cited.
 #
 # The estate-beads closeout participant's engine (design §12.6). Reads the
-# ARCHIVED handoff's `beads:` frontmatter list and runs
+# archived handoff's `beads:` frontmatter list and runs
 # `bead-report-success.sh --id <id> --evidence "archived handoff: <path>"`
 # once per Bead named there. Never dispatches the accepting review (design
 # §13, Dispatch: that is the executor's own session, after
@@ -21,8 +24,10 @@
 # `ckpt-participants.sh` now accepts `--handoff <path>` and, under `--event`,
 # prefixes a `kind: shell` participant's emitted `run:` line with
 # `CKPT_HANDOFF_PATH=<path>` (right after `CKPT_EVENT=<event>`) on a closeout
-# event — the save-checkpoint skill resolves and passes the archived handoff's
-# own path there. This script reads that variable (falling back to $1); given
+# event — the save-checkpoint skill resolves and passes the work unit's ROLLING
+# handoff path there, before the handoff participant archives the file; this script falls back
+# to the archived sibling when the rolling file is gone. It uses $1 when non-empty, otherwise
+# that variable; given
 # neither, it still fails LOUD (never a silent no-op) naming the gap, so an
 # un-upgraded dispatcher (or a manual invocation) surfaces in the health notice
 # rather than quietly skipping the Beads.
@@ -37,7 +42,12 @@ source "$SCRIPT_DIR/lib/eb-common.sh"
 
 handoff="${1:-${CKPT_HANDOFF_PATH:-}}"
 [[ -n "$handoff" ]] || die "no handoff path given (\$1 or \$CKPT_HANDOFF_PATH). The dispatcher (ckpt-participants.sh) sets \$CKPT_HANDOFF_PATH on a closeout event; either it did not run this as a closeout participant, or you invoked this script directly without the archived handoff path — give one."
-[[ -f "$handoff" ]] || die "no file at '$handoff'."
+given="$handoff"
+if [[ ! -f "$handoff" ]]; then
+  archived="$(dirname "$handoff")/archive/$(basename "$handoff")"
+  [[ -f "$archived" ]] && handoff="$archived"
+fi
+[[ -f "$handoff" ]] || die "no file at '$given'."
 command -v jq >/dev/null || die "jq not on PATH. Install jq, then re-run."
 
 fm="$(eb_read_frontmatter "$SCRIPT_DIR/lib" "$handoff")" \
